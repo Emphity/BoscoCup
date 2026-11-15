@@ -2,26 +2,31 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { categoriaLabel } from "@/lib/labels";
+import { DIA_TORNEO, FUTBOL, FUTBOL_MINUTOS_POR_TURNO } from "@/lib/reglas";
+import { IconPencil } from "@/components/icons";
 import type { CanchaRow, Categoria, EquipoRow, PartidoRow, Profile } from "@/lib/db-types";
 
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
 
-/** ISO -> valor de <input type="datetime-local"> en hora local ("2026-10-20T18:30"). */
-function aInputLocal(iso: string | null): string {
+/** ISO -> valor de <input type="time"> en hora local ("09:30"). */
+function aHoraInput(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** "09:30" -> ISO de esa hora el día del torneo (todos los partidos se juegan ese día). */
+function horaDelTorneo(hora: string): string {
+  const [h, m] = hora.split(":").map(Number);
+  return new Date(DIA_TORNEO.anio, DIA_TORNEO.mes - 1, DIA_TORNEO.dia, h, m).toISOString();
+}
+
+/** Todos los partidos son el mismo día, así que alcanza con la hora. */
 function horarioCorto(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return `${d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit"
-  })}`;
+  return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Cualquier partido que todavía no empezó (grupos o cruces) se reprograma desde su fila. */
@@ -75,8 +80,8 @@ export function AdminPartidos() {
   const [horario, setHorario] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  /** Horario que se está tipeando en una fila de cruce, antes de guardarlo. */
-  const [horarioDraft, setHorarioDraft] = useState<Record<string, string>>({});
+  /** Fila que se está editando con el lápiz (cancha y hora sin guardar todavía). */
+  const [edicion, setEdicion] = useState<{ id: string; cancha: string; hora: string } | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -140,7 +145,6 @@ export function AdminPartidos() {
       const rb = b.ronda_eliminatoria ? ROUND_ORDER.indexOf(b.ronda_eliminatoria) + 1 : 0;
       return ra - rb || (a.fecha_hora_programada ?? "~").localeCompare(b.fecha_hora_programada ?? "~");
     });
-    setHorarioDraft({});
     setPartidos(
       rows.map((p) => ({
         ...p,
@@ -180,7 +184,7 @@ export function AdminPartidos() {
       equipo_local_id: localId,
       equipo_visitante_id: visitanteId || null,
       cancha_id: canchaId || null,
-      fecha_hora_programada: horario ? new Date(horario).toISOString() : null
+      fecha_hora_programada: horario ? horaDelTorneo(horario) : null
     });
     if (err) return setError(err.message);
     setHorario("");
@@ -254,12 +258,106 @@ export function AdminPartidos() {
     if (nuevos.length === 0) {
       return setAviso(todos.length < 2 ? "Cargá al menos 2 equipos para armar el fixture." : "El fixture de grupos ya está completo.");
     }
-    if (!window.confirm(`Se van a crear ${nuevos.length} partidos de fase de grupos (todos contra todos). Después les asignás cancha y horario. ¿Seguimos?`)) {
+    const conHorario = deporte === "futbol";
+    const detalle = conHorario
+      ? `, con cancha y horario el domingo ${DIA_TORNEO.dia} desde las 9:30 (turnos de ${FUTBOL_MINUTOS_POR_TURNO}'). Después podés cambiar cualquiera con el lápiz.`
+      : ". Después les asignás cancha y horario con el lápiz.";
+    if (!window.confirm(`Se van a crear ${nuevos.length} partidos de fase de grupos (todos contra todos)${detalle} ¿Seguimos?`)) {
       return;
     }
     const { error: err } = await supabase.from("partidos").insert(nuevos);
     if (err) return setError(`No se pudo armar el fixture: ${err.message}`);
-    setAviso(`Listo: ${nuevos.length} partidos creados. Completá cancha y horario en cada fila.`);
+    if (conHorario) {
+      const r = await programarSinHorario();
+      if (r.error) setError(`Los partidos se crearon, pero no se pudo programar el horario: ${r.error}`);
+      else setAviso(`Listo: ${nuevos.length} partidos creados con cancha y horario.${r.sinLugar ? ` ${r.sinLugar} quedaron sin lugar.` : ""}`);
+    } else {
+      setAviso(`Listo: ${nuevos.length} partidos creados. Completá cancha y horario con el lápiz de cada fila.`);
+    }
+    loadPartidos(categoriaId);
+  }
+
+  /**
+   * Fútbol: reparte los partidos de grupos de la categoría que todavía no tienen
+   * horario en turnos de 35' (15' + 5' de descanso + 15') desde las 9:30 del día
+   * del torneo. Usa las canchas de fútbol, respeta la cancha si ya estaba
+   * asignada, no pisa partidos ya programados (de cualquier categoría) y nunca
+   * pone a un equipo a jugar dos partidos en el mismo turno.
+   */
+  async function programarSinHorario(): Promise<{ programados: number; sinLugar: number; error?: string }> {
+    if (!supabase) return { programados: 0, sinLugar: 0, error: "Supabase no está configurado." };
+    if (canchasCompatibles.length === 0) return { programados: 0, sinLugar: 0, error: "No hay canchas de fútbol cargadas." };
+
+    const { data: pendData, error: errPend } = await supabase
+      .from("partidos")
+      .select("id, cancha_id, equipo_local_id, equipo_visitante_id")
+      .eq("categoria_id", categoriaId)
+      .is("ronda_eliminatoria", null)
+      .is("fecha_hora_programada", null)
+      .in("estado", ["programado", "postergado", "suspendido"])
+      .not("equipo_visitante_id", "is", null);
+    if (errPend) return { programados: 0, sinLugar: 0, error: errPend.message };
+    const pendientes = (pendData as Pick<PartidoRow, "id" | "cancha_id" | "equipo_local_id" | "equipo_visitante_id">[]) ?? [];
+    if (pendientes.length === 0) return { programados: 0, sinLugar: 0 };
+
+    const { anio, mes, dia } = DIA_TORNEO;
+    const inicio = new Date(anio, mes - 1, dia, FUTBOL.horaInicio.horas, FUTBOL.horaInicio.minutos).getTime();
+    const turnoMs = FUTBOL_MINUTOS_POR_TURNO * 60 * 1000;
+    const finDia = new Date(anio, mes - 1, dia, 23, 59).getTime();
+
+    // Lo que ya está programado ese día ocupa canchas y equipos.
+    const { data: ocupadosData } = await supabase
+      .from("partidos")
+      .select("cancha_id, equipo_local_id, equipo_visitante_id, fecha_hora_programada")
+      .gte("fecha_hora_programada", new Date(inicio).toISOString())
+      .lte("fecha_hora_programada", new Date(finDia).toISOString());
+    const ocupados = ((ocupadosData as Pick<PartidoRow, "cancha_id" | "equipo_local_id" | "equipo_visitante_id" | "fecha_hora_programada">[]) ?? []).map(
+      (o) => ({ ...o, turno: Math.floor((new Date(o.fecha_hora_programada as string).getTime() - inicio) / turnoMs) })
+    );
+    const canchaOcupada = new Set(ocupados.filter((o) => o.cancha_id).map((o) => `${o.cancha_id}|${o.turno}`));
+    const equipoOcupado = new Set(
+      ocupados.flatMap((o) => [o.equipo_local_id, o.equipo_visitante_id].filter(Boolean).map((id) => `${id}|${o.turno}`))
+    );
+
+    let programados = 0;
+    let sinLugar = 0;
+    for (const p of pendientes) {
+      const opciones = p.cancha_id ? [p.cancha_id] : canchasCompatibles.map((c) => c.id);
+      let turnoElegido = -1;
+      let canchaElegida: string | undefined;
+      for (let turno = 0; inicio + turno * turnoMs <= finDia; turno++) {
+        if (equipoOcupado.has(`${p.equipo_local_id}|${turno}`) || equipoOcupado.has(`${p.equipo_visitante_id}|${turno}`)) continue;
+        canchaElegida = opciones.find((c) => !canchaOcupada.has(`${c}|${turno}`));
+        if (canchaElegida) {
+          turnoElegido = turno;
+          break;
+        }
+      }
+      if (!canchaElegida || turnoElegido < 0) {
+        sinLugar++;
+        continue;
+      }
+      canchaOcupada.add(`${canchaElegida}|${turnoElegido}`);
+      equipoOcupado.add(`${p.equipo_local_id}|${turnoElegido}`);
+      equipoOcupado.add(`${p.equipo_visitante_id}|${turnoElegido}`);
+      const { error: err } = await supabase
+        .from("partidos")
+        .update({ cancha_id: canchaElegida, fecha_hora_programada: new Date(inicio + turnoElegido * turnoMs).toISOString() })
+        .eq("id", p.id);
+      if (err) return { programados, sinLugar, error: err.message };
+      programados++;
+    }
+    return { programados, sinLugar };
+  }
+
+  /** Botón para completar los partidos de grupos que hayan quedado sin horario. */
+  async function onCompletarHorarios() {
+    setError(null);
+    setAviso(null);
+    const r = await programarSinHorario();
+    if (r.error) setError(`No se pudo programar: ${r.error}`);
+    else if (r.programados === 0 && r.sinLugar === 0) setAviso("Todos los partidos de grupos ya tienen horario.");
+    else setAviso(`Listo: ${r.programados} partidos con cancha y horario.${r.sinLugar ? ` ${r.sinLugar} quedaron sin lugar.` : ""}`);
     loadPartidos(categoriaId);
   }
 
@@ -288,10 +386,15 @@ export function AdminPartidos() {
     loadPartidos(categoriaId);
   }
 
-  function onHorarioCruce(p: PartidoConNombres) {
-    const valor = horarioDraft[p.id];
-    if (valor === undefined || valor === aInputLocal(p.fecha_hora_programada)) return;
-    onProgramarCruce(p, { fecha_hora_programada: valor ? new Date(valor).toISOString() : null });
+  /** Guarda lo que se cambió con el lápiz: cancha y hora (siempre el día del torneo). */
+  async function onGuardarEdicion(p: PartidoConNombres) {
+    if (!edicion) return;
+    const { cancha, hora } = edicion;
+    setEdicion(null);
+    const fecha = hora ? horaDelTorneo(hora) : null;
+    const fechaActual = p.fecha_hora_programada ? new Date(p.fecha_hora_programada).toISOString() : null;
+    if ((cancha || null) === p.cancha_id && fecha === fechaActual) return;
+    await onProgramarCruce(p, { cancha_id: cancha || null, fecha_hora_programada: fecha });
   }
 
   async function onAsignarVeedor(partidoId: string, veedorId: string) {
@@ -339,6 +442,21 @@ export function AdminPartidos() {
         </button>
       </section>
 
+      {deporte === "futbol" && (
+        <section className="panel fixture-panel">
+          <div>
+            <h3 className="panel-title">Horarios de fútbol</h3>
+            <p className="form-hint" style={{ margin: 0 }}>
+              Todo se juega el domingo {DIA_TORNEO.dia}/{DIA_TORNEO.mes}. Puertas 8:00 · primeros partidos 9:30. Cada partido dura {FUTBOL_MINUTOS_POR_TURNO}': 2 tiempos de{" "}
+              {FUTBOL.minutosPorTiempo}' con {FUTBOL.minutosDescanso}' de descanso. En playoff, si empatan, van a penales.
+            </p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={onCompletarHorarios}>
+            Completar horarios faltantes
+          </button>
+        </section>
+      )}
+
       <details className="panel manual-match">
         <summary>Agregar un partido a mano (desempates, amistosos)</summary>
       <form className="form-row" onSubmit={onSubmit}>
@@ -376,8 +494,8 @@ export function AdminPartidos() {
           </select>
         </label>
         <label className="field">
-          <span>Horario</span>
-          <input className="input" type="datetime-local" value={horario} onChange={(e) => setHorario(e.target.value)} />
+          <span>Hora (domingo {DIA_TORNEO.dia})</span>
+          <input className="input" type="time" value={horario} onChange={(e) => setHorario(e.target.value)} />
         </label>
         <button className="btn btn-primary" type="submit">
           Programar partido
@@ -393,7 +511,7 @@ export function AdminPartidos() {
             <tr>
               <th>Partido</th>
               <th>Cancha</th>
-              <th>Horario</th>
+              <th>Hora</th>
               <th>Estado</th>
               <th>Veedor</th>
               <th></th>
@@ -403,6 +521,7 @@ export function AdminPartidos() {
             {partidos.map((p) => {
               const editable = esProgramable(p);
               const faltaProgramar = editable && (!p.cancha_id || !p.fecha_hora_programada);
+              const enEdicion = editable && edicion?.id === p.id ? edicion : null;
               return (
               <tr key={p.id} className={faltaProgramar ? "row-pending" : ""}>
                 <td>
@@ -411,11 +530,11 @@ export function AdminPartidos() {
                   {faltaProgramar && <span className="row-note">Falta {!p.cancha_id && !p.fecha_hora_programada ? "cancha y horario" : !p.cancha_id ? "cancha" : "horario"}</span>}
                 </td>
                 <td>
-                  {editable ? (
+                  {enEdicion ? (
                     <select
                       className="input input-sm"
-                      value={p.cancha_id ?? ""}
-                      onChange={(e) => onProgramarCruce(p, { cancha_id: e.target.value || null })}
+                      value={enEdicion.cancha}
+                      onChange={(e) => setEdicion({ ...enEdicion, cancha: e.target.value })}
                       aria-label={`Cancha de ${p.local_nombre} vs. ${p.visitante_nombre}`}
                     >
                       <option value="">Sin asignar</option>
@@ -426,22 +545,41 @@ export function AdminPartidos() {
                       ))}
                     </select>
                   ) : (
-                    p.cancha_nombre
+                    p.cancha_nombre || "—"
                   )}
                 </td>
                 <td className="tnum">
-                  {editable ? (
-                    <input
-                      className="input input-sm"
-                      type="datetime-local"
-                      value={horarioDraft[p.id] ?? aInputLocal(p.fecha_hora_programada)}
-                      onChange={(e) => setHorarioDraft((d) => ({ ...d, [p.id]: e.target.value }))}
-                      onBlur={() => onHorarioCruce(p)}
-                      onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-                      aria-label={`Horario de ${p.local_nombre} vs. ${p.visitante_nombre}`}
-                    />
+                  {enEdicion ? (
+                    <span className="edit-inline">
+                      <input
+                        className="input input-sm"
+                        type="time"
+                        value={enEdicion.hora}
+                        onChange={(e) => setEdicion({ ...enEdicion, hora: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && onGuardarEdicion(p)}
+                        aria-label={`Hora de ${p.local_nombre} vs. ${p.visitante_nombre}`}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={() => onGuardarEdicion(p)}>
+                        Guardar
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEdicion(null)}>
+                        Cancelar
+                      </button>
+                    </span>
                   ) : (
-                    horarioCorto(p.fecha_hora_programada)
+                    <span className="edit-inline">
+                      {horarioCorto(p.fecha_hora_programada)}
+                      {editable && (
+                        <button
+                          className="pencil-btn"
+                          onClick={() => setEdicion({ id: p.id, cancha: p.cancha_id ?? "", hora: aHoraInput(p.fecha_hora_programada) })}
+                          aria-label={`Cambiar cancha y hora de ${p.local_nombre} vs. ${p.visitante_nombre}`}
+                          title="Cambiar cancha y hora"
+                        >
+                          <IconPencil />
+                        </button>
+                      )}
+                    </span>
                   )}
                 </td>
                 <td>

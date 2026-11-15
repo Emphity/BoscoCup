@@ -117,6 +117,13 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
   const { zones, equipos, partidos, grupos } = await computeZonesForCategoria(cat);
 
   // ---- cruces ----
+  const canchaIdsCruces = Array.from(
+    new Set(partidos.filter((p) => p.ronda_eliminatoria && p.cancha_id).map((p) => p.cancha_id as string))
+  );
+  const { data: canchasCruces } = canchaIdsCruces.length
+    ? await supabase.from("canchas").select("id, nombre").in("id", canchaIdsCruces)
+    : { data: [] as { id: string; nombre: string }[] };
+  const canchaMap = new Map(((canchasCruces as { id: string; nombre: string }[]) ?? []).map((c) => [c.id, c.nombre]));
   const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
   const bracket: BracketMatch[] = partidos
     .filter((p) => p.ronda_eliminatoria && equipoMap.has(p.equipo_local_id))
@@ -144,7 +151,8 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
         pending: p.estado !== "finalizado",
         scheduledTime: p.fecha_hora_programada
           ? new Date(p.fecha_hora_programada).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
-          : undefined
+          : undefined,
+        court: p.cancha_id ? canchaMap.get(p.cancha_id) || undefined : undefined
       };
     });
 

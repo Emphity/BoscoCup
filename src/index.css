@@ -1750,6 +1750,31 @@ select.input {
   border-color: var(--color-brand);
   background: var(--color-surface);
 }
+.edit-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pencil-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--color-line);
+  background: transparent;
+  color: inherit;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.pencil-btn:hover {
+  opacity: 1;
+}
+.pencil-btn svg {
+  width: 15px;
+  height: 15px;
+}
 .input-sm {
   min-height: 34px;
   padding: 6px 8px;

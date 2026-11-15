@@ -476,7 +476,12 @@ function Bracket({ matches, onTeam }: { matches: BracketMatch[]; onTeam: (t: Tea
                       )}
                     </div>
                   ))}
-                  {m.pending && <span className="duel-time">{m.scheduledTime ?? "Horario a definir"}</span>}
+                  {m.pending && (
+                    <span className="duel-time">
+                      {m.scheduledTime ?? "Horario a definir"}
+                      {m.court && ` · ${m.court}`}
+                    </span>
+                  )}
                   {empatadoSinDefinir && <p className="notice">Empate: falta definir por penales.</p>}
                 </div>
               );

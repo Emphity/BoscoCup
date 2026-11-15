@@ -62,6 +62,7 @@ export interface BracketMatch {
   winnerId: string | null;
   pending: boolean;
   scheduledTime?: string;
+  court?: string;
 }
 
 export interface HistorialMatch {
