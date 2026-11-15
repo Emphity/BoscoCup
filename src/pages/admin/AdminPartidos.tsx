@@ -82,6 +82,27 @@ export function AdminPartidos() {
   const [aviso, setAviso] = useState<string | null>(null);
   /** Fila que se está editando con el lápiz (cancha y hora sin guardar todavía). */
   const [edicion, setEdicion] = useState<{ id: string; cancha: string; hora: string } | null>(null);
+  /** Grupos de la categoría, para asignarle una cancha fija a cada uno. */
+  const [grupos, setGrupos] = useState<{ id: string; nombre: string }[]>([]);
+  /**
+   * Canchas de fútbol que ya usa el masculino (una por grupo). El femenino
+   * arranca en la cancha siguiente: con 2 grupos masculinos, juega en la 3ª.
+   */
+  const [canchasAntes, setCanchasAntes] = useState(0);
+
+  useEffect(() => {
+    const cat = categorias.find((c) => c.id === categoriaId);
+    const masculino = categorias.find((c) => c.deporte === "futbol" && c.rama === "Masculino");
+    if (!supabase || !cat || cat.deporte !== "futbol" || cat.rama !== "Femenino" || !masculino) {
+      setCanchasAntes(0);
+      return;
+    }
+    supabase
+      .from("grupos")
+      .select("id", { count: "exact", head: true })
+      .eq("categoria_id", masculino.id)
+      .then(({ count }) => setCanchasAntes(Math.max(1, count ?? 0)));
+  }, [categoriaId, categorias]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -118,6 +139,12 @@ export function AdminPartidos() {
       .eq("categoria_id", categoriaId)
       .order("nombre")
       .then(({ data }) => setEquipos((data as EquipoRow[]) ?? []));
+    supabase
+      .from("grupos")
+      .select("id, nombre")
+      .eq("categoria_id", categoriaId)
+      .order("nombre")
+      .then(({ data }) => setGrupos((data as { id: string; nombre: string }[]) ?? []));
     loadPartidos(categoriaId);
   }, [categoriaId]);
 
@@ -280,9 +307,14 @@ export function AdminPartidos() {
   /**
    * Fútbol: reparte los partidos de grupos de la categoría que todavía no tienen
    * horario en turnos de 35' (15' + 5' de descanso + 15') desde las 9:30 del día
-   * del torneo. Usa las canchas de fútbol, respeta la cancha si ya estaba
-   * asignada, no pisa partidos ya programados (de cualquier categoría) y nunca
-   * pone a un equipo a jugar dos partidos en el mismo turno.
+   * del torneo.
+   *
+   * Cada grupo juega todos sus partidos en su propia cancha (grupo A → cancha 1,
+   * grupo B → cancha 2, o lo que se elija en el panel), así los grupos van a la
+   * par: el turno 1 del grupo A arranca a la misma hora que el turno 1 del B.
+   * Dentro de cada cancha se ordenan para que nadie juegue dos seguidos si se
+   * puede evitar y que todos los equipos avancen parejo. No pisa partidos ya
+   * programados (de cualquier categoría) y respeta la cancha si ya estaba puesta.
    */
   async function programarSinHorario(): Promise<{ programados: number; sinLugar: number; error?: string }> {
     if (!supabase) return { programados: 0, sinLugar: 0, error: "Supabase no está configurado." };
@@ -290,14 +322,16 @@ export function AdminPartidos() {
 
     const { data: pendData, error: errPend } = await supabase
       .from("partidos")
-      .select("id, cancha_id, equipo_local_id, equipo_visitante_id")
+      .select("id, grupo_id, cancha_id, equipo_local_id, equipo_visitante_id")
       .eq("categoria_id", categoriaId)
       .is("ronda_eliminatoria", null)
       .is("fecha_hora_programada", null)
       .in("estado", ["programado", "postergado", "suspendido"])
-      .not("equipo_visitante_id", "is", null);
+      .not("equipo_visitante_id", "is", null)
+      .order("created_at");
     if (errPend) return { programados: 0, sinLugar: 0, error: errPend.message };
-    const pendientes = (pendData as Pick<PartidoRow, "id" | "cancha_id" | "equipo_local_id" | "equipo_visitante_id">[]) ?? [];
+    type Pendiente = Pick<PartidoRow, "id" | "grupo_id" | "cancha_id" | "equipo_local_id" | "equipo_visitante_id">;
+    const pendientes = (pendData as Pendiente[]) ?? [];
     if (pendientes.length === 0) return { programados: 0, sinLugar: 0 };
 
     const { anio, mes, dia } = DIA_TORNEO;
@@ -319,33 +353,58 @@ export function AdminPartidos() {
       ocupados.flatMap((o) => [o.equipo_local_id, o.equipo_visitante_id].filter(Boolean).map((id) => `${id}|${o.turno}`))
     );
 
+    // Cada grupo con su lista de partidos pendientes.
+    const porGrupo = new Map<string, Pendiente[]>();
+    for (const p of pendientes) {
+      const k = p.grupo_id ?? "";
+      porGrupo.set(k, [...(porGrupo.get(k) ?? []), p]);
+    }
+
     let programados = 0;
     let sinLugar = 0;
-    for (const p of pendientes) {
-      const opciones = p.cancha_id ? [p.cancha_id] : canchasCompatibles.map((c) => c.id);
-      let turnoElegido = -1;
-      let canchaElegida: string | undefined;
-      for (let turno = 0; inicio + turno * turnoMs <= finDia; turno++) {
-        if (equipoOcupado.has(`${p.equipo_local_id}|${turno}`) || equipoOcupado.has(`${p.equipo_visitante_id}|${turno}`)) continue;
-        canchaElegida = opciones.find((c) => !canchaOcupada.has(`${c}|${turno}`));
-        if (canchaElegida) {
-          turnoElegido = turno;
+    for (const [grupoId, lista] of porGrupo) {
+      const canchaDelGrupo = grupoId ? canchaGrupo(grupoId) : "";
+      const jugados = new Map<string, number>();
+      const ultimoTurno = new Map<string, number>();
+      const restantes = [...lista];
+
+      while (restantes.length > 0) {
+        // Primer turno con lugar; entre los partidos que entran, el que deja
+        // descansar a todos y sea de los equipos que menos jugaron.
+        let elegido: { idx: number; turno: number; cancha: string } | null = null;
+        for (let turno = 0; inicio + turno * turnoMs <= finDia && !elegido; turno++) {
+          let mejor: { idx: number; cancha: string; puntaje: number } | null = null;
+          for (let idx = 0; idx < restantes.length; idx++) {
+            const p = restantes[idx];
+            const equiposP = [p.equipo_local_id, p.equipo_visitante_id as string];
+            if (equiposP.some((e) => equipoOcupado.has(`${e}|${turno}`))) continue;
+            const opciones = p.cancha_id ? [p.cancha_id] : canchaDelGrupo ? [canchaDelGrupo] : canchasCompatibles.map((c) => c.id);
+            const cancha = opciones.find((c) => !canchaOcupada.has(`${c}|${turno}`));
+            if (!cancha) continue;
+            const seguidos = equiposP.filter((e) => ultimoTurno.get(e) === turno - 1).length;
+            const puntaje = seguidos * 1000 + equiposP.reduce((acc, e) => acc + (jugados.get(e) ?? 0), 0);
+            if (!mejor || puntaje < mejor.puntaje) mejor = { idx, cancha, puntaje };
+          }
+          if (mejor) elegido = { idx: mejor.idx, turno, cancha: mejor.cancha };
+        }
+        if (!elegido) {
+          sinLugar += restantes.length;
           break;
         }
+        const [p] = restantes.splice(elegido.idx, 1);
+        canchaOcupada.add(`${elegido.cancha}|${elegido.turno}`);
+        for (const e of [p.equipo_local_id, p.equipo_visitante_id as string]) {
+          equipoOcupado.add(`${e}|${elegido.turno}`);
+          jugados.set(e, (jugados.get(e) ?? 0) + 1);
+          ultimoTurno.set(e, elegido.turno);
+        }
+        const { error: err } = await supabase
+          .from("partidos")
+          .update({ cancha_id: elegido.cancha, fecha_hora_programada: new Date(inicio + elegido.turno * turnoMs).toISOString() })
+          .eq("id", p.id);
+        if (err) return { programados, sinLugar, error: err.message };
+        programados++;
       }
-      if (!canchaElegida || turnoElegido < 0) {
-        sinLugar++;
-        continue;
-      }
-      canchaOcupada.add(`${canchaElegida}|${turnoElegido}`);
-      equipoOcupado.add(`${p.equipo_local_id}|${turnoElegido}`);
-      equipoOcupado.add(`${p.equipo_visitante_id}|${turnoElegido}`);
-      const { error: err } = await supabase
-        .from("partidos")
-        .update({ cancha_id: canchaElegida, fecha_hora_programada: new Date(inicio + turnoElegido * turnoMs).toISOString() })
-        .eq("id", p.id);
-      if (err) return { programados, sinLugar, error: err.message };
-      programados++;
     }
     return { programados, sinLugar };
   }
@@ -408,7 +467,19 @@ export function AdminPartidos() {
   }
 
   const deporte = categorias.find((c) => c.id === categoriaId)?.deporte;
-  const canchasCompatibles = canchas.filter((c) => !deporte || !c.deportes_compatibles?.length || c.deportes_compatibles.includes(deporte));
+  const canchasCompatibles = canchas.filter(
+    (c) => c.estado !== "fuera_de_servicio" && (!deporte || !c.deportes_compatibles?.length || c.deportes_compatibles.includes(deporte))
+  );
+
+  /**
+   * Cancha fija de cada grupo, en orden por nombre. Masculino: grupo A → 1ª
+   * cancha, grupo B → 2ª. Femenino: la cancha que sigue a las del masculino.
+   */
+  function canchaGrupo(grupoId: string): string {
+    const i = grupos.findIndex((g) => g.id === grupoId);
+    if (i < 0 || canchasCompatibles.length === 0) return "";
+    return canchasCompatibles[(canchasAntes + i) % canchasCompatibles.length].id;
+  }
 
   return (
     <div>
@@ -448,12 +519,22 @@ export function AdminPartidos() {
             <h3 className="panel-title">Horarios de fútbol</h3>
             <p className="form-hint" style={{ margin: 0 }}>
               Todo se juega el domingo {DIA_TORNEO.dia}/{DIA_TORNEO.mes}. Puertas 8:00 · primeros partidos 9:30. Cada partido dura {FUTBOL_MINUTOS_POR_TURNO}': 2 tiempos de{" "}
-              {FUTBOL.minutosPorTiempo}' con {FUTBOL.minutosDescanso}' de descanso. En playoff, si empatan, van a penales.
+              {FUTBOL.minutosPorTiempo}' con {FUTBOL.minutosDescanso}' de descanso. Cada grupo juega todos sus partidos en su
+              cancha y los grupos van a la par (sin partidos entre grupos). En playoff, si empatan, van a penales.
             </p>
           </div>
-          <button className="btn btn-ghost" type="button" onClick={onCompletarHorarios}>
-            Completar horarios faltantes
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
+            {grupos.length > 0 && (
+              <span className="form-hint" style={{ margin: 0 }}>
+                {grupos
+                  .map((g) => `${g.nombre} → ${canchasCompatibles.find((c) => c.id === canchaGrupo(g.id))?.nombre ?? "sin cancha"}`)
+                  .join(" · ")}
+              </span>
+            )}
+            <button className="btn btn-ghost" type="button" onClick={onCompletarHorarios}>
+              Completar horarios faltantes
+            </button>
+          </div>
         </section>
       )}
 

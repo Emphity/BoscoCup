@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { categoriaLabel } from "@/lib/labels";
 import { computeZonesForCategoria, type ZonasCategoria } from "@/lib/standings";
 import { generarCruces } from "@/lib/bracket";
+import { ubicarCrucesFemenino } from "@/lib/cruces-femenino";
 import type { Categoria, EquipoRow, PartidoRow } from "@/lib/db-types";
 import { Shield } from "@/components/icons";
 
@@ -85,7 +86,13 @@ export function AdminCruces() {
     setCargando(true);
     setMensaje(null);
     const resultado = await generarCruces(categoriaId, clasificanSinGrupos);
-    setMensaje({ ok: resultado.ok, texto: resultado.mensaje });
+    let texto = resultado.mensaje;
+    const cat = categorias.find((c) => c.id === categoriaId);
+    if (resultado.ok && cat) {
+      const cancha = await ubicarCrucesFemenino(cat, categorias);
+      if (cancha) texto += ` Quedaron en ${cancha}, uno detrás de otro.`;
+    }
+    setMensaje({ ok: resultado.ok, texto });
     setCargando(false);
     if (resultado.ok) cargar(categoriaId);
   }
@@ -185,8 +192,10 @@ export function AdminCruces() {
           {mensaje && <p className={mensaje.ok ? "form-success" : "form-error"}>{mensaje.texto}</p>}
           {mensaje?.ok && (
             <p className="form-hint" style={{ margin: 0 }}>
-              Los cruces nuevos quedan sin cancha ni horario.{" "}
-              <Link to={`/admin/partidos?categoria=${categoriaId}`}>Asignalos en Partidos →</Link>
+              {categoria?.deporte === "futbol" && categoria.rama === "Femenino"
+                ? "Si hace falta cambiar alguno, usá el lápiz en "
+                : "Los cruces nuevos quedan sin cancha ni horario. Asignalos con el lápiz en "}
+              <Link to={`/admin/partidos?categoria=${categoriaId}`}>Partidos →</Link>
             </p>
           )}
         </div>
