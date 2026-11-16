@@ -248,6 +248,8 @@ function BotonAcceso({ onClick }: { onClick: () => void }) {
 }
 
 function HojaAcceso({ onClose }: { onClose: () => void }) {
+  const [esStaff, setEsStaff] = useState(false);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -257,36 +259,51 @@ function HojaAcceso({ onClose }: { onClose: () => void }) {
   return (
     <div className="sheet-overlay" onClick={onClose}>
       <div className="sheet access-sheet" role="dialog" aria-modal="true" aria-labelledby="acceso-titulo" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-title" id="acceso-titulo">
-          Acceso del staff
-        </div>
-        <p className="access-intro">Esta sección es solo para quienes organizan el torneo. Si venís a ver resultados, no necesitás entrar.</p>
+        {!esStaff ? (
+          <>
+            <div className="sheet-title" id="acceso-titulo">
+              Aviso
+            </div>
+            <p className="access-intro">
+              Este panel es solamente para agentes de la organización. Si sos un usuario común o un jugador, por favor volvé
+              atrás: no hace falta que inicies sesión.
+            </p>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => setEsStaff(true)}>
+              Soy parte del staff
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="sheet-title" id="acceso-titulo">
+              Acceso del staff
+            </div>
+            <Link className="access-option" to="/veedor/login">
+              <span className="access-ico">
+                <IconWhistle />
+              </span>
+              <div>
+                <strong>Soy veedor</strong>
+                <span>Cargás goles y tarjetas de los partidos que te asignaron. Entrás con tu PIN de 6 dígitos.</span>
+              </div>
+              <span className="access-arrow" aria-hidden="true">
+                →
+              </span>
+            </Link>
 
-        <Link className="access-option" to="/veedor/login">
-          <span className="access-ico">
-            <IconWhistle />
-          </span>
-          <div>
-            <strong>Soy veedor</strong>
-            <span>Cargás goles y tarjetas de los partidos que te asignaron. Entrás con tu PIN de 6 dígitos.</span>
-          </div>
-          <span className="access-arrow" aria-hidden="true">
-            →
-          </span>
-        </Link>
-
-        <Link className="access-option org" to="/admin/login">
-          <span className="access-ico">
-            <IconClipboard />
-          </span>
-          <div>
-            <strong>Soy organizador</strong>
-            <span>Equipos, jugadores, fixture, canchas, horarios y veedores. Entrás con tu email y contraseña.</span>
-          </div>
-          <span className="access-arrow" aria-hidden="true">
-            →
-          </span>
-        </Link>
+            <Link className="access-option org" to="/admin/login">
+              <span className="access-ico">
+                <IconClipboard />
+              </span>
+              <div>
+                <strong>Soy organizador</strong>
+                <span>Equipos, jugadores, fixture, canchas, horarios y veedores. Entrás con tu email y contraseña.</span>
+              </div>
+              <span className="access-arrow" aria-hidden="true">
+                →
+              </span>
+            </Link>
+          </>
+        )}
 
         <button className="btn btn-ghost" style={{ marginTop: 14, width: "100%" }} onClick={onClose}>
           Volver
