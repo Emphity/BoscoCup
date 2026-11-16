@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { CanchaRow, Categoria, EquipoRow, EventoPartidoRow, JugadorRow, PartidoRow } from "@/lib/db-types";
-import { computeZonesForCategoria, teamFrom } from "@/lib/standings";
+import { computeZonesForCategoria, teamFrom, zonasParaMostrar } from "@/lib/standings";
 import type { Sport, StandingRow, Team } from "@/types";
 
 export type ResultadoLetra = "G" | "E" | "P";
@@ -73,11 +73,14 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetail | null
   const cat = catData as Categoria | null;
   if (!cat) return null;
 
-  const [{ zones, equipos, partidos, grupos }, { data: jugadoresData }] = await Promise.all([
+  const [zonas, { data: jugadoresData }] = await Promise.all([
     computeZonesForCategoria(cat),
     supabase.from("jugadores").select("*").eq("equipo_id", teamId).order("nombre")
   ]);
   const jugadores = (jugadoresData as JugadorRow[]) ?? [];
+  const { equipos, partidos, grupos } = zonas;
+  // Mismas zonas que la tabla pública: un equipo sin grupo igual tiene su posición.
+  const zones = zonasParaMostrar(zonas, cat);
 
   const propios = partidos.filter(
     (p) => p.equipo_visitante_id && (p.equipo_local_id === teamId || p.equipo_visitante_id === teamId)

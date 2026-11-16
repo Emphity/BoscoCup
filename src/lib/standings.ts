@@ -131,6 +131,40 @@ export interface ZonasCategoria {
   equipos: EquipoRow[];
   partidos: PartidoRow[];
   grupos: GrupoRow[];
+  /** Tarjetas de los partidos de grupo finalizados, por equipo. */
+  tarjetas: Map<string, Tarjetas>;
+}
+
+/**
+ * Zonas tal como se muestran al público (tabla y ficha de equipo): sin las
+ * zonas vacías y con un listado extra para los equipos que todavía no tienen
+ * grupo, así se ven igual mientras se arman los grupos. Para generar cruces
+ * se usan las zonas reales de `computeZonesForCategoria`, nunca estas.
+ */
+export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas }: ZonasCategoria, cat: Categoria): ZoneStandings[] {
+  if (grupos.length === 0) return zones;
+  const asignados = new Set(zones.flatMap((z) => z.rows.map((r) => r.team.id)));
+  const sinGrupo = equipos.filter((e) => !asignados.has(e.id)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  const visibles = zones.filter((z) => z.rows.length > 0);
+  if (sinGrupo.length === 0) return visibles;
+  const ids = new Set(sinGrupo.map((e) => e.id));
+  const finalizadosEntreEllos = partidos.filter(
+    (p) =>
+      !p.ronda_eliminatoria &&
+      p.estado === "finalizado" &&
+      ids.has(p.equipo_local_id) &&
+      !!p.equipo_visitante_id &&
+      ids.has(p.equipo_visitante_id)
+  );
+  return [
+    ...visibles,
+    {
+      id: "sin-grupo",
+      nombre: visibles.length > 0 ? "Sin grupo asignado" : "",
+      completa: false,
+      rows: computeStandings(sinGrupo, finalizadosEntreEllos, cat, tarjetas)
+    }
+  ];
 }
 
 async function cardCountsFor(partidoIds: string[]): Promise<Map<string, Tarjetas>> {
@@ -165,7 +199,7 @@ async function cardCountsFor(partidoIds: string[]): Promise<Map<string, Tarjetas
  * esos resultados no deben sumar de nuevo en la tabla de grupos.
  */
 export async function computeZonesForCategoria(cat: Categoria): Promise<ZonasCategoria> {
-  if (!supabase) return { zones: [], equipos: [], partidos: [], grupos: [] };
+  if (!supabase) return { zones: [], equipos: [], partidos: [], grupos: [], tarjetas: new Map() };
 
   const [{ data: equiposData }, { data: partidosData }, { data: gruposData }] = await Promise.all([
     supabase.from("equipos").select("*").eq("categoria_id", cat.id),
@@ -214,5 +248,5 @@ export async function computeZonesForCategoria(cat: Categoria): Promise<ZonasCat
     zones = [{ id: "general", nombre: "", completa, rows: computeStandings(equipos, finalizadosDeGrupo, cat, tarjetas, completa) }];
   }
 
-  return { zones, equipos, partidos, grupos };
+  return { zones, equipos, partidos, grupos, tarjetas };
 }
