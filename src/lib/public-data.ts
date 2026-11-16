@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import type { CanchaRow, Categoria, EquipoRow, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
-import { computeZonesForCategoria, teamFrom } from "@/lib/standings";
+import { computeStandings, computeZonesForCategoria, teamFrom } from "@/lib/standings";
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
 
@@ -114,7 +114,29 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
   if (!categoria) return EMPTY;
   const cat = categoria as Categoria;
 
-  const { zones, equipos, partidos, grupos } = await computeZonesForCategoria(cat);
+  const zonas = await computeZonesForCategoria(cat);
+  const { equipos, partidos, grupos } = zonas;
+
+  // Mientras se arman los grupos, los equipos que todavía no están en ninguno
+  // se muestran igual en un listado aparte (así se puede abrir su ficha). Las
+  // zonas que siguen vacías no se muestran. Esto es solo para la vista pública:
+  // los cruces se generan desde las zonas reales de `computeZonesForCategoria`.
+  let zones = zonas.zones;
+  if (grupos.length > 0) {
+    const asignados = new Set(zones.flatMap((z) => z.rows.map((r) => r.team.id)));
+    const sinGrupo = equipos
+      .filter((e) => !asignados.has(e.id))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    zones = zones.filter((z) => z.rows.length > 0);
+    if (sinGrupo.length > 0) {
+      zones.push({
+        id: "sin-grupo",
+        nombre: zones.length > 0 ? "Sin grupo asignado" : "",
+        completa: false,
+        rows: computeStandings(sinGrupo, [], cat)
+      });
+    }
+  }
 
   // ---- cruces ----
   const canchaIdsCruces = Array.from(
