@@ -48,6 +48,8 @@ export interface JugadorRow {
   numero: number | null;
   posicion: string | null;
   dni: string | null;
+  /** Capitán del equipo (uno solo por equipo). */
+  es_capitan: boolean;
 }
 
 export interface CanchaRow {

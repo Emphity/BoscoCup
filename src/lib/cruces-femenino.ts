@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { DIA_TORNEO, FUTBOL, FUTBOL_MINUTOS_POR_TURNO } from "@/lib/reglas";
+import { DIA_TORNEO, FUTBOL, minutosDeTurno } from "@/lib/reglas";
 import type { CanchaRow, Categoria } from "@/lib/db-types";
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
@@ -42,20 +42,22 @@ export async function ubicarCrucesFemenino(categoria: Categoria, categorias: Cat
   // Arranca en el turno siguiente al último partido programado en esa cancha.
   const { data: ultimoData } = await supabase
     .from("partidos")
-    .select("fecha_hora_programada")
+    .select("fecha_hora_programada, ronda_eliminatoria")
     .eq("cancha_id", cancha.id)
     .not("fecha_hora_programada", "is", null)
     .order("fecha_hora_programada", { ascending: false })
     .limit(1);
-  const turnoMs = FUTBOL_MINUTOS_POR_TURNO * 60 * 1000;
-  const ultimo = (ultimoData as { fecha_hora_programada: string }[] | null)?.[0]?.fecha_hora_programada;
+  // La final dura más (2 x 20'), así que cada turno se calcula según su ronda.
+  const turnoMs = (ronda: string | null) => minutosDeTurno(ronda) * 60 * 1000;
+  const ultimoRow = (ultimoData as { fecha_hora_programada: string; ronda_eliminatoria: string | null }[] | null)?.[0];
+  const ultimo = ultimoRow?.fecha_hora_programada;
   let proximo = ultimo
-    ? new Date(ultimo).getTime() + turnoMs
+    ? new Date(ultimo).getTime() + turnoMs(ultimoRow?.ronda_eliminatoria ?? null)
     : new Date(DIA_TORNEO.anio, DIA_TORNEO.mes - 1, DIA_TORNEO.dia, FUTBOL.horaInicio.horas, FUTBOL.horaInicio.minutos).getTime();
 
   for (const p of sinUbicar) {
     const fecha = p.fecha_hora_programada ?? new Date(proximo).toISOString();
-    if (!p.fecha_hora_programada) proximo += turnoMs;
+    if (!p.fecha_hora_programada) proximo += turnoMs(p.ronda_eliminatoria);
     await supabase.from("partidos").update({ cancha_id: cancha.id, fecha_hora_programada: fecha }).eq("id", p.id);
   }
   return cancha.nombre;

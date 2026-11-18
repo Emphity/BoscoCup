@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { FUTBOL } from "@/lib/reglas";
 
 type Periodo = "1T" | "ET" | "2T";
 
@@ -27,7 +26,8 @@ function writeState(partidoId: string, state: ClockState) {
   localStorage.setItem(key(partidoId), JSON.stringify(state));
 }
 
-export function useMatchClock(partidoId: string) {
+/** Reloj del partido. `minutosPorTiempo` es 15 en general y 20 en la final. */
+export function useMatchClock(partidoId: string, minutosPorTiempo: number) {
   const [state, setState] = useState<ClockState>(() => readState(partidoId));
   const [, tick] = useState(0);
 
@@ -50,7 +50,7 @@ export function useMatchClock(partidoId: string) {
     persist({ periodo: "ET", startedAt: null, baseMs: state.baseMs + elapsed });
   }
   function iniciar2T() {
-    persist({ periodo: "2T", startedAt: Date.now(), baseMs: FUTBOL.minutosPorTiempo * 60 * 1000 });
+    persist({ periodo: "2T", startedAt: Date.now(), baseMs: minutosPorTiempo * 60 * 1000 });
   }
   function detener() {
     const elapsed = state.startedAt ? Date.now() - state.startedAt : 0;

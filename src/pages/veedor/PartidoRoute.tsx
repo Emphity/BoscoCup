@@ -62,6 +62,7 @@ export function PartidoRoute() {
       jugadoresVisitante={jugadoresVisitante}
       estadoInicial={partido.estado}
       esEliminatoria={Boolean(partido.ronda_eliminatoria)}
+      ronda={partido.ronda_eliminatoria}
     />
   );
 }

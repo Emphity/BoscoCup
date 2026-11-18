@@ -5,7 +5,9 @@ import { cancelQueuedInsert, insertWithFallback, isQueued, updateWithFallback } 
 import { useSyncStatus } from "@/lib/use-sync-status";
 import { useMatchClock } from "@/lib/use-match-clock";
 import type { EquipoRow, EventoPartidoRow, EventoTipo, JugadorRow, PartidoEstado } from "@/lib/db-types";
-import { IconCard, IconGol, IconGoalOwn, IconIncidencia, IconSync, IconUndo } from "@/components/icons";
+import { IconCard, IconGol, IconGoalOwn, IconIncidencia, IconSub, IconSync, IconUndo } from "@/components/icons";
+import { FUTBOL, minutosPorTiempo } from "@/lib/reglas";
+import { fetchTarjetasEquipo, type Suspension } from "@/lib/suspensiones";
 
 interface Props {
   partidoId: string;
@@ -15,6 +17,7 @@ interface Props {
   jugadoresVisitante: JugadorRow[];
   estadoInicial: PartidoEstado;
   esEliminatoria: boolean;
+  ronda: string | null;
 }
 
 type Step = "equipo" | "jugador" | "texto";
@@ -34,6 +37,7 @@ const ACCIONES: { tipo: EventoTipo; label: string; icon: typeof IconGol; classNa
 
 /** Casos menos frecuentes, en botones más chicos. */
 const ACCIONES_EXTRA: { tipo: EventoTipo; label: string; icon: typeof IconGol }[] = [
+  { tipo: "cambio", label: "Cambio", icon: IconSub },
   { tipo: "gol_en_contra", label: "Gol en contra", icon: IconGoalOwn },
   { tipo: "incidencia", label: "Incidencia", icon: IconIncidencia }
 ];
@@ -47,6 +51,7 @@ const TIPO_TEXTO: Partial<Record<EventoTipo, string>> = {
   tarjeta_amarilla: "Amarilla",
   tarjeta_roja: "Roja",
   doble_amarilla: "Doble amarilla (roja)",
+  cambio: "Cambio (entra)",
   incidencia: "Incidencia"
 };
 
@@ -57,10 +62,12 @@ export function PartidoEnVivo({
   jugadoresLocal,
   jugadoresVisitante,
   estadoInicial,
-  esEliminatoria
+  esEliminatoria,
+  ronda
 }: Props) {
   const navigate = useNavigate();
-  const clock = useMatchClock(partidoId);
+  const minutos = minutosPorTiempo(ronda);
+  const clock = useMatchClock(partidoId, minutos);
   const sync = useSyncStatus();
 
   const [estado, setEstado] = useState<PartidoEstado>(estadoInicial);
@@ -83,6 +90,18 @@ export function PartidoEnVivo({
   }, [partidoId]);
 
   const [otroDispositivo, setOtroDispositivo] = useState(false);
+
+  // Suspendidos por tarjetas de partidos anteriores (no deberían jugar este).
+  const [suspendidos, setSuspendidos] = useState<Map<string, Suspension>>(new Map());
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetchTarjetasEquipo(equipoLocal.id, partidoId), fetchTarjetasEquipo(equipoVisitante.id, partidoId)]).then(
+      ([l, v]) => active && setSuspendidos(new Map([...l.suspendidos, ...v.suspendidos]))
+    );
+    return () => {
+      active = false;
+    };
+  }, [partidoId, equipoLocal.id, equipoVisitante.id]);
 
   // Lock advisorio: avisa si otro dispositivo pudo haber abierto este partido hace poco.
   useEffect(() => {
@@ -148,6 +167,16 @@ export function PartidoEnVivo({
     }
     return m;
   }, [eventos]);
+
+  const cambiosPorEquipo = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of eventos) {
+      if (e.anulado || e.tipo !== "cambio" || !e.equipo_id) continue;
+      m.set(e.equipo_id, (m.get(e.equipo_id) ?? 0) + 1);
+    }
+    return m;
+  }, [eventos]);
+  const sinCambios = (equipoId: string) => (cambiosPorEquipo.get(equipoId) ?? 0) >= FUTBOL.maxCambios;
 
   function jugadoresDe(equipoId: string): JugadorRow[] {
     return equipoId === equipoLocal.id ? jugadoresLocal : jugadoresVisitante;
@@ -280,6 +309,14 @@ export function PartidoEnVivo({
         </div>
 
         {otroDispositivo && <p className="form-hint form-hint-warn">Este partido pudo abrirse hace instantes en otro dispositivo.</p>}
+        {suspendidos.size > 0 && (
+          <p className="form-hint form-hint-warn">
+            <b>No pueden jugar este partido (suspendidos):</b>{" "}
+            {[...suspendidos.entries()]
+              .map(([id, s]) => `${jugadorMap.get(id)?.nombre ?? "—"} (${s.motivo})`)
+              .join(", ")}
+          </p>
+        )}
 
         <div className="v-score-row">
           <div className="v-team">
@@ -301,6 +338,10 @@ export function PartidoEnVivo({
           <span className="v-clock tnum">{clock.label}</span>
           <span className="badge-estado">{estado.replace("_", " ")}</span>
         </div>
+        <p className="form-hint" style={{ textAlign: "center", margin: "2px 0 8px" }}>
+          {ronda === "Final" ? "Final: " : ""}2 tiempos de {minutos}' · descanso {FUTBOL.minutosDescanso}'
+          {esEliminatoria ? " · si empatan, penales (tanda de 5)" : ""}
+        </p>
 
         <div className="v-clock-controls">
           {estado === "programado" && (
@@ -384,13 +425,31 @@ export function PartidoEnVivo({
 
             {sheet.step === "equipo" && (
               <div className="sheet-options">
-                <button className="sheet-option" onClick={() => setSheet({ ...sheet, equipoId: equipoLocal.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}>
+                <button
+                  className={`sheet-option ${sheet.tipo === "cambio" && sinCambios(equipoLocal.id) ? "disabled-look" : ""}`}
+                  disabled={sheet.tipo === "cambio" && sinCambios(equipoLocal.id)}
+                  onClick={() => setSheet({ ...sheet, equipoId: equipoLocal.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}
+                >
                   <span className="color-dot" style={{ background: equipoLocal.color_primario }} />
                   {equipoLocal.nombre}
+                  {sheet.tipo === "cambio" && (
+                    <span className="sheet-option-note">
+                      {cambiosPorEquipo.get(equipoLocal.id) ?? 0}/{FUTBOL.maxCambios} cambios
+                    </span>
+                  )}
                 </button>
-                <button className="sheet-option" onClick={() => setSheet({ ...sheet, equipoId: equipoVisitante.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}>
+                <button
+                  className={`sheet-option ${sheet.tipo === "cambio" && sinCambios(equipoVisitante.id) ? "disabled-look" : ""}`}
+                  disabled={sheet.tipo === "cambio" && sinCambios(equipoVisitante.id)}
+                  onClick={() => setSheet({ ...sheet, equipoId: equipoVisitante.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}
+                >
                   <span className="color-dot" style={{ background: equipoVisitante.color_primario }} />
                   {equipoVisitante.nombre}
+                  {sheet.tipo === "cambio" && (
+                    <span className="sheet-option-note">
+                      {cambiosPorEquipo.get(equipoVisitante.id) ?? 0}/{FUTBOL.maxCambios} cambios
+                    </span>
+                  )}
                 </button>
                 {sheet.tipo === "incidencia" && (
                   <button className="sheet-option" onClick={() => setSheet({ ...sheet, equipoId: undefined, step: "texto" })}>
@@ -402,6 +461,12 @@ export function PartidoEnVivo({
 
             {sheet.step === "jugador" && equipoSel && (
               <div className="sheet-options">
+                {sheet.tipo === "cambio" && (
+                  <p className="form-hint" style={{ margin: "0 0 4px" }}>
+                    Elegí al jugador de {equipoSel.nombre} que entra. Quedan{" "}
+                    {FUTBOL.maxCambios - (cambiosPorEquipo.get(equipoSel.id) ?? 0)} de {FUTBOL.maxCambios} cambios.
+                  </p>
+                )}
                 {sheet.tipo === "gol_en_contra" && (
                   <p className="form-hint" style={{ margin: "0 0 4px" }}>
                     Elegí al jugador de {equipoSel.nombre} que la metió en su arco: el gol se suma al rival.
@@ -410,6 +475,7 @@ export function PartidoEnVivo({
                 {jugadoresDe(equipoSel.id).map((j) => {
                   const amarillas = amarillasPorJugador.get(j.id) ?? 0;
                   const afuera = expulsados.has(j.id);
+                  const suspension = suspendidos.get(j.id);
                   return (
                     <button
                       key={j.id}
@@ -417,8 +483,10 @@ export function PartidoEnVivo({
                       onClick={() => confirmarEvento({ equipoId: sheet.equipoId ?? null, jugadorId: j.id })}
                     >
                       {j.nombre}
+                      {j.es_capitan && <span className="captain-badge" aria-label="Capitán">C</span>}
                       {amarillas > 0 && !afuera && <i className="tcard y" aria-label="Tiene amarilla" />}
                       {afuera && <span className="sheet-option-note">expulsado</span>}
+                      {!afuera && suspension && <span className="sheet-option-note warn">suspendido ({suspension.motivo})</span>}
                     </button>
                   );
                 })}

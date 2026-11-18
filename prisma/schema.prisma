@@ -163,6 +163,7 @@ model Jugador {
   dni                    String?
   fotoUrl                String?  @map("foto_url")
   suspendidoHastaPartido Int?     @map("suspendido_hasta_partido")
+  esCapitan              Boolean  @default(false) @map("es_capitan") // uno por equipo (0009)
   createdAt              DateTime @default(now()) @map("created_at")
 
   equipo Equipo @relation(fields: [equipoId], references: [id], onDelete: Cascade)

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual del Veedor · BoscoCup</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  :root {
+    --navy: #0F2147;
+    --red: #E1262D;
+    --ink: #1B2333;
+    --muted: #5B6578;
+    --line: #E3E7EF;
+    --soft: #F3F5FA;
+    --green: #16A34A;
+    --amber: #F2C230;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; color: var(--ink); }
+  body { font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3 { color: var(--navy); margin: 0; line-height: 1.15; }
+  p { margin: 0 0 6px; }
+  b, strong { color: var(--navy); }
+
+  /* ---------- portada ---------- */
+  .cover { height: 265mm; display: flex; flex-direction: column; page-break-after: always; }
+  .cover-band { background: var(--navy); color: #fff; border-radius: 14px; padding: 26mm 14mm 16mm; position: relative; overflow: hidden; }
+  .cover-band::after { content: ""; position: absolute; left: 14mm; bottom: 0; width: 34mm; height: 4px; background: var(--red); }
+  .cover-band img { height: 44mm; display: block; margin-bottom: 10mm; filter: drop-shadow(0 4px 14px rgba(0,0,0,.35)); }
+  .cover-kicker { font-size: 9pt; letter-spacing: .22em; text-transform: uppercase; color: #AFC0E3; font-weight: 600; }
+  .cover h1 { color: #fff; font-size: 34pt; font-weight: 800; margin: 3mm 0 3mm; letter-spacing: -.01em; }
+  .cover h1 span { color: #FF5A61; }
+  .cover-sub { font-size: 12pt; color: #D7E0F2; max-width: 130mm; }
+  .cover-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 10mm; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 6mm; background: #fff; }
+  .card h3 { font-size: 11.5pt; margin-bottom: 3mm; }
+  .card ul { margin: 0; padding-left: 5mm; }
+  .card li { margin-bottom: 1.5mm; }
+  .pin-box { border: 2px dashed var(--red); border-radius: 12px; padding: 6mm; background: #FFF6F6; }
+  .pin-box h3 { color: var(--red); }
+  .pin-slots { display: flex; gap: 3mm; margin: 4mm 0 3mm; }
+  .pin-slots span { width: 11mm; height: 14mm; border-radius: 8px; background: #fff; border: 1.5px solid #F0B9BC; }
+  .pin-box p { font-size: 9.5pt; color: var(--muted); }
+  .toc { margin-top: auto; }
+  .toc ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 8mm; }
+  .toc li { display: flex; gap: 3mm; align-items: baseline; padding: 2.5mm 0; border-bottom: 1px solid var(--line); }
+  .toc li b { color: var(--red); font-size: 9pt; letter-spacing: .1em; }
+
+  /* ---------- secciones ---------- */
+  .part { page-break-before: always; }
+  .part-head { display: flex; align-items: center; gap: 4mm; padding-bottom: 4mm; margin-bottom: 6mm; border-bottom: 3px solid var(--navy); position: relative; }
+  .part-head::after { content: ""; position: absolute; left: 0; bottom: -3px; width: 26mm; height: 3px; background: var(--red); }
+  .part-num { font-size: 9pt; font-weight: 700; letter-spacing: .2em; color: var(--red); text-transform: uppercase; }
+  .part-head h2 { font-size: 20pt; font-weight: 800; }
+
+  .step { display: grid; grid-template-columns: 54mm 1fr; gap: 8mm; align-items: start; margin-bottom: 8mm; page-break-inside: avoid; }
+  .step.two { grid-template-columns: 54mm 54mm 1fr; gap: 6mm; }
+  .shot { width: 54mm; border-radius: 16px; border: 1px solid #D5DBE7; box-shadow: 0 6px 18px rgba(15,33,71,.12); display: block; background: #EEF1F8; }
+  .step-text { padding-top: 2mm; }
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 9mm; height: 9mm; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 800; font-size: 11pt; margin-bottom: 3mm; }
+  .step h3 { font-size: 13pt; margin-bottom: 2.5mm; }
+  .tip { margin-top: 3mm; padding: 3mm 4mm; border-radius: 10px; background: var(--soft); border-left: 3px solid var(--navy); font-size: 9.5pt; }
+  .tip.warn { background: #FFF4F4; border-left-color: var(--red); }
+  .tip > b:first-child { display: block; margin-bottom: .5mm; }
+  .tag { display: inline-block; padding: .3mm 2.4mm; border-radius: 999px; font-weight: 700; font-size: 9pt; color: #fff; background: var(--navy); white-space: nowrap; }
+  .tag.red { background: var(--red); }
+  .tag.green { background: var(--green); }
+  .tag.amber { background: var(--amber); color: #2a1f00; }
+  .tag.ghost { background: #E7EBF3; color: var(--navy); }
+
+  .table { width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 9.5pt; }
+  .table td { padding: 2mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .table td:first-child { white-space: nowrap; width: 30mm; }
+
+  .tips-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .tips-grid .card p { font-size: 9.8pt; }
+  .footnote { margin-top: 8mm; font-size: 8.5pt; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- ======================= PORTADA ======================= -->
+<section class="cover">
+  <div class="cover-band">
+    <img src="../public/logo-bosco-cup-dark.png" alt="BoscoCup">
+    <div class="cover-kicker">Guía para el staff</div>
+    <h1>Manual del <span>Veedor</span></h1>
+    <p class="cover-sub">Cómo entrar con tu PIN y cargar goles, tarjetas y sets desde el celular, paso a paso.</p>
+  </div>
+
+  <div class="cover-body">
+    <div class="pin-box">
+      <h3>Tu PIN de acceso</h3>
+      <div class="pin-slots"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <p>Son 6 números y te los pasa la organización. Es personal: <b>no lo compartas</b> con jugadores ni con otros veedores.</p>
+    </div>
+    <div class="card">
+      <h3>Antes de empezar</h3>
+      <ul>
+        <li>Celular con batería y datos o wifi.</li>
+        <li>El link de la página del torneo.</li>
+        <li>Tu PIN de 6 dígitos.</li>
+        <li>Usá <b>un solo celular</b> por partido.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3 style="margin:10mm 0 3mm">Contenido</h3>
+    <ol>
+      <li><b>01</b> Cómo entrar al sistema</li>
+      <li><b>02</b> Partido de fútbol</li>
+      <li><b>03</b> Partido de vóley</li>
+      <li><b>04</b> Salir y consejos</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ======================= 1. ENTRAR ======================= -->
+<section class="part">
+  <div class="part-head">
+    <div><div class="part-num">Parte 01</div><h2>Cómo entrar al sistema</h2></div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/01-inicio.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">1</div>
+      <h3>Abrí la página y tocá el botón de acceso</h3>
+      <p>Entrá al link de la página del torneo que te pasó la organización. Arriba a la derecha, al lado del botón de la luna, hay un <b>botón redondo</b> (el marcado en rojo). Tocalo.</p>
+      <div class="tip"><b>Consejo</b>Guardá la página en la pantalla de inicio del celular (menú del navegador → <i>Agregar a pantalla de inicio</i>) para abrirla como una app.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/02-aviso.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">2</div>
+      <h3>Leé el aviso y tocá “Soy parte del staff”</h3>
+      <p>Aparece un aviso que dice que este panel es solo para la organización. Como sos veedor, tocá <span class="tag">Soy parte del staff</span>.</p>
+      <p>Si te equivocaste, <b>Volver</b> te lleva de nuevo a los resultados.</p>
+    </div>
+  </div>
+</section>
+
+<section class="part" style="page-break-before: always;">
+  <div class="step">
+    <img class="shot" src="img/03-staff.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">3</div>
+      <h3>Elegí “Soy veedor”</h3>
+      <p>Te aparecen dos opciones. Tocá la primera, <b>Soy veedor</b> (la del silbato rojo).</p>
+      <div class="tip warn"><b>Ojo</b>“Soy organizador” es solo para quienes arman el torneo y pide email y contraseña. No es para vos.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/04-pin.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">4</div>
+      <h3>Escribí tu PIN y tocá “Ingresar”</h3>
+      <p>Escribí los <b>6 números</b> de tu PIN en el recuadro. Cuando están los 6, el botón <span class="tag">Ingresar</span> se activa: tocalo.</p>
+      <p style="color:var(--muted); font-size:9.5pt">En la imagen se ve 123456 solo como ejemplo. Vos poné el tuyo.</p>
+      <div class="tip warn"><b>Si dice “PIN incorrecto o cuenta inactiva”</b>Revisá que los números estén bien. Si sigue sin entrar, avisá a la organización. Después de varios intentos fallidos el sistema te hace esperar un rato.</div>
+    </div>
+  </div>
+</section>
+
+<section class="part" style="page-break-before: always;">
+  <div class="step">
+    <img class="shot" src="img/05-mis-partidos.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">5</div>
+      <h3>“Mis partidos”: elegí el que vas a controlar</h3>
+      <p>Vas a ver <b>solo los partidos que te asignaron</b>, con la cancha y el horario. Tocá el partido que te toca.</p>
+      <table class="table">
+        <tr><td><span class="tag ghost">PROGRAMADO</span></td><td>Todavía no empezó.</td></tr>
+        <tr><td><span class="tag ghost">EN_JUEGO</span></td><td>Ya lo iniciaste. Podés volver a entrar si saliste.</td></tr>
+        <tr><td><span class="tag ghost">FINALIZADO</span></td><td>Aparece en gris y ya no se puede abrir.</td></tr>
+      </table>
+      <div class="tip"><b>¿No aparece tu partido?</b>Avisale a la organización para que te lo asigne.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2. FÚTBOL ======================= -->
+<section class="part">
+  <div class="part-head">
+    <div><div class="part-num">Parte 02</div><h2>Partido de fútbol</h2></div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/06-iniciar.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">6</div>
+      <h3>Iniciá el 1er tiempo con el pitazo</h3>
+      <p>Cuando el árbitro arranca el partido, tocá <span class="tag">Iniciar 1er tiempo</span>. El reloj empieza a correr solo y el partido pasa a <b>EN JUEGO</b>. La gente lo ve en vivo en la página.</p>
+      <p>Arriba está el marcador. Abajo, los botones para cargar lo que pasa:</p>
+      <table class="table">
+        <tr><td><span class="tag green">Gol</span></td><td>Un gol normal.</td></tr>
+        <tr><td><span class="tag amber">Amarilla</span></td><td>Tarjeta amarilla. Si el mismo jugador recibe una segunda, se anota sola como <b>doble amarilla (roja)</b>.</td></tr>
+        <tr><td><span class="tag red">Roja</span></td><td>Expulsión directa.</td></tr>
+        <tr><td><span class="tag ghost">Gol en contra</span></td><td>Elegís el equipo del jugador que la metió en su propio arco. El gol se le suma al rival.</td></tr>
+        <tr><td><span class="tag ghost">Incidencia</span></td><td>Una nota escrita: lesión, pelea, demora, lo que haga falta dejar anotado.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="part" style="page-break-before: always;">
+  <div class="step two">
+    <img class="shot" src="img/07-gol-equipo.jpg" alt="">
+    <img class="shot" src="img/08-gol-jugador.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">7</div>
+      <h3>Cargar un gol o una tarjeta</h3>
+      <p><b>1.</b> Tocá <span class="tag green">Gol</span> (o la tarjeta).</p>
+      <p><b>2.</b> Elegí el <b>equipo</b>.</p>
+      <p><b>3.</b> Elegí el <b>jugador</b>. Listo: queda guardado con el minuto del reloj.</p>
+      <div class="tip"><b>¿No sabés quién fue?</b>Tocá “Jugador sin identificar”. El gol cuenta igual.</div>
+      <div class="tip"><b>Jugadores marcados</b>Si un jugador ya tiene amarilla aparece con una tarjetita, y si fue expulsado dice “expulsado”.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/09-marcador.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">8</div>
+      <h3>Revisá el marcador y la lista</h3>
+      <p>El <b>marcador</b> se actualiza solo con cada gol. Debajo queda la <b>lista de todo lo cargado</b>, con el minuto, del más nuevo al más viejo.</p>
+      <p>Antes de terminar, revisá que la lista coincida con lo que pasó en la cancha.</p>
+    </div>
+  </div>
+</section>
+
+<section class="part" style="page-break-before: always;">
+  <div class="step">
+    <img class="shot" src="img/10-controles.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">9</div>
+      <h3>Entretiempo, 2do tiempo y correcciones</h3>
+      <p><span class="tag">Entretiempo</span> frena el reloj al terminar el primer tiempo. Cuando arranca el segundo, aparece <span class="tag">Iniciar 2do tiempo</span>: tocalo con el pitazo.</p>
+      <p><b>¿Te equivocaste?</b> <span class="tag ghost">Deshacer último evento</span> borra lo último que cargaste (te pide confirmar). Si el error fue antes, deshacé de a uno hasta llegar y volvé a cargar lo correcto.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/11-finalizar.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">10</div>
+      <h3>Finalizar el partido</h3>
+      <p>Con el pitazo final tocá <span class="tag red">Finalizar partido</span>. El sistema te muestra el resultado y te pide <b>Confirmar</b>.</p>
+      <div class="tip warn"><b>Importante</b>Después de finalizar <b>no se puede cargar ni corregir nada</b>. Revisá el resultado antes de confirmar.</div>
+      <div class="tip"><b>Cruces con empate: penales</b>En un partido de cruces que termina empatado, en lugar de “Finalizar” aparece <b>Cargar penales</b>. Con los botones <b>+</b> y <b>−</b> ponés cuántos convirtió cada equipo y tocás “Finalizar X-Y por penales”. Los penales no pueden quedar empatados.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 3. VÓLEY ======================= -->
+<section class="part">
+  <div class="part-head">
+    <div><div class="part-num">Parte 03</div><h2>Partido de vóley</h2></div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/12-voley-iniciar.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">11</div>
+      <h3>Iniciá el partido</h3>
+      <p>En vóley no hay reloj. Cuando arranca el partido tocá <span class="tag red">Iniciar partido</span>. Arriba se ven los <b>sets ganados</b> de cada equipo y el número de set que se está jugando.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/13-voley-puntos.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">12</div>
+      <h3>Sumá los puntos</h3>
+      <p>Cada vez que un equipo gana un punto, <b>tocá su cuadro de color</b> (“+1 …”). El número grande es el puntaje del set actual.</p>
+      <p>Si sumaste de más, tocá <span class="tag ghost">Restar punto</span> debajo de ese equipo.</p>
+    </div>
+  </div>
+</section>
+
+<section class="part" style="page-break-before: always;">
+  <div class="step">
+    <img class="shot" src="img/14-voley-cerrar-set.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">13</div>
+      <h3>Cerrá cada set</h3>
+      <p>Cuando termina el set, tocá <span class="tag">Cerrar set</span> y <b>Confirmar</b>. El set queda guardado en la lista de abajo (ej.: “S1 25 – 21 · ganó …”), se suma al marcador de sets y el nuevo set arranca en 0-0.</p>
+      <div class="tip"><b>Ojo</b>No se puede cerrar un set empatado.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/15-voley-finalizar.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">14</div>
+      <h3>Finalizá el partido</h3>
+      <p>Después de cerrar el último set, con el set nuevo todavía en 0-0, aparece <span class="tag red">Finalizar partido</span>. Tocalo y confirmá: se guarda el resultado en sets.</p>
+      <div class="tip warn"><b>Importante</b>Igual que en fútbol, una vez finalizado no se puede cambiar.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 4. SALIR Y CONSEJOS ======================= -->
+<section class="part">
+  <div class="part-head">
+    <div><div class="part-num">Parte 04</div><h2>Salir y consejos</h2></div>
+  </div>
+
+  <div class="step">
+    <img class="shot" src="img/16-salir.jpg" alt="">
+    <div class="step-text">
+      <div class="step-num">15</div>
+      <h3>Salir</h3>
+      <p>Cuando terminaste todos tus partidos, en “Mis partidos” tocá <span class="tag ghost">Salir</span> arriba a la derecha.</p>
+      <p>Si tenés otro partido más tarde podés quedarte adentro: al volver a abrir la página seguís en tu sesión.</p>
+      <div class="tip warn"><b>No salgas</b> si arriba del partido dice “Sincronizando” o “Sin conexión”: esperá a que diga “Sincronizado”.</div>
+    </div>
+  </div>
+
+  <div class="tips-grid">
+    <div class="card">
+      <h3>Si se corta internet</h3>
+      <p>Arriba del partido hay un indicador: <b>Sincronizado</b> (todo subido), <b>Sincronizando (n)</b> (faltan n cosas por subir) o <b>Sin conexión</b>.</p>
+      <p>Si se corta, <b>seguí cargando normal</b>: todo queda guardado en el celular y se sube solo cuando vuelve la señal. No cierres la página ni borres datos del navegador mientras tanto.</p>
+    </div>
+    <div class="card">
+      <h3>Un solo celular por partido</h3>
+      <p>Cargá cada partido desde un solo celular. Si ves el aviso <i>“Este partido pudo abrirse hace instantes en otro dispositivo”</i>, fijate que nadie más lo esté cargando al mismo tiempo.</p>
+    </div>
+    <div class="card">
+      <h3>Antes de cada partido</h3>
+      <p>Batería cargada, brillo alto y datos o wifi. Abrí el partido unos minutos antes para tenerlo listo y tocá <b>Iniciar</b> recién con el pitazo.</p>
+    </div>
+    <div class="card">
+      <h3>¿Algo no funciona?</h3>
+      <p>Si no podés entrar, no ves tu partido o te equivocaste al finalizar, <b>avisale a la organización</b>: ellos pueden revisarlo y corregirlo desde el panel.</p>
+    </div>
+  </div>
+
+  <p class="footnote">Las capturas usan equipos, jugadores y un PIN de ejemplo. · BoscoCup</p>
+</section>
+
+</body>
+</html>

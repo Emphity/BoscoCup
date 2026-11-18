@@ -520,7 +520,7 @@ export function AdminPartidos() {
             <p className="form-hint" style={{ margin: 0 }}>
               Todo se juega el domingo {DIA_TORNEO.dia}/{DIA_TORNEO.mes}. Puertas 8:00 · primeros partidos 9:30. Cada partido dura {FUTBOL_MINUTOS_POR_TURNO}': 2 tiempos de{" "}
               {FUTBOL.minutosPorTiempo}' con {FUTBOL.minutosDescanso}' de descanso. Cada grupo juega todos sus partidos en su
-              cancha y los grupos van a la par (sin partidos entre grupos). En playoff, si empatan, van a penales.
+              cancha y los grupos van a la par (sin partidos entre grupos). En playoff, si empatan, van a penales (tanda de 5). La final se juega a 2 tiempos de {FUTBOL.minutosPorTiempoFinal}'.
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>

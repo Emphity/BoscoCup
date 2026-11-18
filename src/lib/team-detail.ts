@@ -8,6 +8,7 @@ export type ResultadoLetra = "G" | "E" | "P";
 export interface TeamPlayer {
   id: string;
   name: string;
+  captain: boolean;
   goals: number;
   amarillas: number;
   rojas: number;
@@ -121,6 +122,7 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetail | null
     .map((j) => ({
       id: j.id,
       name: j.nombre,
+      captain: Boolean(j.es_capitan),
       ...(porJugador.get(j.id) ?? { goals: 0, amarillas: 0, rojas: 0 })
     }))
     .sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name, "es"));

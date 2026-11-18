@@ -244,6 +244,18 @@ export function TeamSheet({ target, onClose }: { target: TeamRef | null; onClose
                 </div>
               )}
 
+              {detail.players.some((p) => p.captain) && (
+                <div className="ts-section">
+                  <h3>Capitán</h3>
+                  <div className="ts-scorer">
+                    <span className="captain-badge" aria-hidden="true">
+                      C
+                    </span>
+                    <span className="ts-scorer-name">{detail.players.find((p) => p.captain)?.name}</span>
+                  </div>
+                </div>
+              )}
+
               {detail.players.some((p) => p.goals > 0) && (
                 <div className="ts-section">
                   <h3>Goleadores</h3>
@@ -303,10 +315,17 @@ export function TeamSheet({ target, onClose }: { target: TeamRef | null; onClose
                 </tr>
               </thead>
               <tbody>
-                {detail.players.map((p) => (
+                {[...detail.players]
+                  .sort((a, b) => Number(b.captain) - Number(a.captain))
+                  .map((p) => (
                   <tr key={p.id}>
                     <td>
                       <span className="ts-player">{p.name}</span>
+                      {p.captain && (
+                        <span className="captain-badge" title="Capitán" aria-label="Capitán">
+                          C
+                        </span>
+                      )}
                     </td>
                     <td className="tnum">{p.goals || "–"}</td>
                     <td className="tnum">{p.amarillas || "–"}</td>
