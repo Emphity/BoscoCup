@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import { getMockAllLiveMatches, getMockData } from "@/lib/mock-data";
 import { fetchAllLiveMatches, fetchPublicData, type PublicData } from "@/lib/public-data";
+import { TABLAS_ESTATICAS, invalidarTabla, invalidarTodo, type TablaEstatica } from "@/lib/static-cache";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DynamicIsland } from "@/components/DynamicIsland";
 import { Segmented } from "@/components/Segmented";
@@ -72,31 +73,115 @@ export function PublicHome() {
   useEffect(() => {
     let active = true;
 
-    async function load() {
-      if (!isSupabaseConfigured) {
-        setData(getMockData(sport, ramaActual));
-        setLiveMatches(getMockAllLiveMatches());
-        return;
-      }
-      const [d, live] = await Promise.all([fetchPublicData(sport, ramaActual), fetchAllLiveMatches()]);
-      if (active) {
-        setData(d);
-        setLiveMatches(live);
-      }
+    if (!isSupabaseConfigured) {
+      setData(getMockData(sport, ramaActual));
+      setLiveMatches(getMockAllLiveMatches());
+      return () => { active = false; };
     }
-
-    load();
     const client = supabase;
     if (!client) return () => { active = false; };
 
-    const channel = client
+    // Cada pedido lleva un número; si llega una respuesta vieja después de una
+    // nueva, se descarta en vez de pisar datos más frescos.
+    let seqPublico = 0;
+    let seqVivo = 0;
+    let categoriaId: string | undefined;
+    let idsEnVivo = new Set<string>();
+
+    async function cargarPublico() {
+      const seq = ++seqPublico;
+      const d = await fetchPublicData(sport, ramaActual);
+      if (!active || seq !== seqPublico) return;
+      categoriaId = d.categoriaId;
+      setData(d);
+    }
+
+    async function cargarVivo() {
+      const seq = ++seqVivo;
+      const live = await fetchAllLiveMatches();
+      if (!active || seq !== seqVivo) return;
+      idsEnVivo = new Set(live.map((m) => m.id));
+      setLiveMatches(live);
+    }
+
+    // Los eventos realtime se juntan: durante un partido llegan varios seguidos
+    // y todos los espectadores los reciben a la vez. Se espera un poco (con una
+    // demora al azar para no pegarle a la base todos juntos) y se refresca solo
+    // lo que pudo haber cambiado.
+    let pendientePublico = false;
+    let pendienteVivo = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function programar(publico: boolean, vivo: boolean) {
+      pendientePublico ||= publico;
+      pendienteVivo ||= vivo;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (pendientePublico) void cargarPublico();
+        if (pendienteVivo) void cargarVivo();
+        pendientePublico = pendienteVivo = false;
+      }, 300 + Math.random() * 400);
+    }
+
+    void cargarPublico();
+    void cargarVivo();
+
+    type Fila = Record<string, unknown> | undefined;
+    const filaDe = (payload: { new: unknown; old: unknown }) => ({
+      nueva: (payload.new && Object.keys(payload.new as object).length ? payload.new : undefined) as Fila,
+      vieja: (payload.old && Object.keys(payload.old as object).length ? payload.old : undefined) as Fila
+    });
+
+    function onPartido(payload: { new: unknown; old: unknown }) {
+      const { nueva, vieja } = filaDe(payload);
+      const id = (nueva?.id ?? vieja?.id) as string | undefined;
+      const estado = nueva?.estado as string | undefined;
+      const cat = (nueva?.categoria_id ?? vieja?.categoria_id) as string | undefined;
+      // Tabla/cruces: solo si el partido es de la categoría que se está viendo
+      // (en un DELETE puede no venir la categoría: por las dudas, se refresca).
+      const publico = !cat || !categoriaId || cat === categoriaId;
+      // Carrusel en vivo: si el partido está o estaba en juego.
+      const vivo = !id || idsEnVivo.has(id) || estado === "en_juego" || estado === "entretiempo";
+      programar(publico, vivo);
+    }
+
+    function onEvento(payload: { new: unknown; old: unknown }) {
+      const { nueva, vieja } = filaDe(payload);
+      const partidoId = (nueva?.partido_id ?? vieja?.partido_id) as string | undefined;
+      // Un gol o una tarjeta de un partido en juego solo cambia el carrusel: la
+      // tabla se calcula con partidos finalizados. Si el evento es de otro
+      // partido (una corrección posterior), se refresca todo.
+      if (partidoId && idsEnVivo.has(partidoId)) programar(false, true);
+      else programar(true, true);
+    }
+
+    function onEstatica(tabla: TablaEstatica) {
+      invalidarTabla(tabla);
+      programar(true, true);
+    }
+
+    // Con el celular bloqueado o la pestaña en segundo plano se pueden perder
+    // eventos realtime: al volver se descarta la caché y se recarga todo.
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      invalidarTodo();
+      programar(true, true);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+
+    let channel = client
       .channel(`public-${sport}-${ramaActual}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "partidos" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "eventos_partido" }, load)
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "partidos" }, onPartido)
+      .on("postgres_changes", { event: "*", schema: "public", table: "eventos_partido" }, onEvento);
+    for (const tabla of TABLAS_ESTATICAS) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table: tabla }, () => onEstatica(tabla));
+    }
+    channel.subscribe();
 
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };
   }, [sport, ramaActual]);

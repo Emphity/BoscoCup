@@ -32,6 +32,8 @@ export interface StandingRow {
   goalsFor: number;
   goalsAgainst: number;
   goalDiff: number;
+  /** Vóley: diferencia de tantos (puntos dentro de los sets), tercer criterio de desempate. */
+  tantosDiff?: number;
   points: number;
   amarillas: number;
   rojas: number;

@@ -8,19 +8,36 @@ export function teamFrom(row: EquipoRow): Team {
 
 type Tarjetas = { amarillas: number; rojas: number };
 
+/** Tantos (puntos dentro de los sets) de un partido de vóley, sumando todos sus sets. */
+export type TantosPartido = { local: number; visitante: number };
+
+/**
+ * Puntos que da un partido de vóley a cada equipo según los sets ganados
+ * (al mejor de 3): 2-0 → 3 al ganador y 0 al perdedor; 2-1 → 2 al ganador y
+ * 1 al perdedor. Si se cerró igualado (no debería pasar), cuenta como empate.
+ */
+export function puntosVoley(setsPropios: number, setsRival: number, cat: Categoria): number {
+  if (setsPropios === setsRival) return cat.puntos_empate;
+  if (setsPropios > setsRival) return setsRival === 0 ? 3 : 2;
+  return setsPropios === 0 ? 0 : 1;
+}
+
 /**
  * Posiciones de un conjunto de equipos a partir de sus partidos finalizados.
- * Orden de desempate (de mayor a menor prioridad): puntos, diferencia de gol,
- * tarjetas amarillas (menos es mejor), tarjetas rojas (menos es mejor). Los
- * partidos de fase eliminatoria (`ronda_eliminatoria` seteado) nunca entran
- * acá — ver `computeZonesForCategoria`.
+ * Fútbol: victoria/empate/derrota según los puntos de la categoría; vóley:
+ * según los sets (ver `puntosVoley`). Orden de desempate (de mayor a menor
+ * prioridad): puntos, diferencia de gol (en vóley, de sets), en vóley
+ * diferencia de tantos, tarjetas amarillas (menos es mejor), tarjetas rojas
+ * (menos es mejor). Los partidos de fase eliminatoria (`ronda_eliminatoria`
+ * seteado) nunca entran acá — ver `computeZonesForCategoria`.
  */
 export function computeStandings(
   equipos: EquipoRow[],
   partidosFinalizados: PartidoRow[],
   cat: Categoria,
   tarjetas: Map<string, Tarjetas> = new Map(),
-  completa = false
+  completa = false,
+  tantos: Map<string, TantosPartido> = new Map()
 ): StandingRow[] {
   interface Agg {
     pj: number;
@@ -29,9 +46,13 @@ export function computeStandings(
     pp: number;
     gf: number;
     gc: number;
+    pts: number;
+    tantosDiff: number;
   }
+  const esVoley = cat.deporte === "voley";
+  const puntosFutbol = (a: number, b: number) => (a > b ? cat.puntos_victoria : a < b ? cat.puntos_derrota : cat.puntos_empate);
   const agg = new Map<string, Agg>();
-  equipos.forEach((e) => agg.set(e.id, { pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0 }));
+  equipos.forEach((e) => agg.set(e.id, { pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, pts: 0, tantosDiff: 0 }));
 
   for (const p of partidosFinalizados) {
     if (!p.equipo_visitante_id) continue;
@@ -56,13 +77,25 @@ export function computeStandings(
       local.pe++;
       visitante.pe++;
     }
+    if (esVoley) {
+      local.pts += puntosVoley(rl, rv, cat);
+      visitante.pts += puntosVoley(rv, rl, cat);
+      const t = tantos.get(p.id);
+      if (t) {
+        local.tantosDiff += t.local - t.visitante;
+        visitante.tantosDiff += t.visitante - t.local;
+      }
+    } else {
+      local.pts += puntosFutbol(rl, rv);
+      visitante.pts += puntosFutbol(rv, rl);
+    }
   }
 
   const rows: StandingRow[] = equipos
     .map((e) => {
       const a = agg.get(e.id) as Agg;
       const t = tarjetas.get(e.id) ?? { amarillas: 0, rojas: 0 };
-      const points = a.pg * cat.puntos_victoria + a.pe * cat.puntos_empate + a.pp * cat.puntos_derrota;
+      const points = a.pts;
       return {
         team: teamFrom(e),
         position: 0,
@@ -73,6 +106,7 @@ export function computeStandings(
         goalsFor: a.gf,
         goalsAgainst: a.gc,
         goalDiff: a.gf - a.gc,
+        tantosDiff: esVoley ? a.tantosDiff : undefined,
         points,
         amarillas: t.amarillas,
         rojas: t.rojas,
@@ -80,7 +114,14 @@ export function computeStandings(
         empatado: false
       };
     })
-    .sort((a, b) => b.points - a.points || b.goalDiff - a.goalDiff || a.amarillas - b.amarillas || a.rojas - b.rojas);
+    .sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.goalDiff - a.goalDiff ||
+        (b.tantosDiff ?? 0) - (a.tantosDiff ?? 0) ||
+        a.amarillas - b.amarillas ||
+        a.rojas - b.rojas
+    );
 
   const hayJugados = rows.some((r) => r.played > 0);
   rows.forEach((row, i) => {
@@ -101,10 +142,16 @@ export function computeStandings(
   return rows;
 }
 
-/** Mismos puntos, DG, amarillas y rojas — no hay forma de ordenarlos sin un partido de desempate. */
+/** Mismos puntos, DG (y tantos en vóley), amarillas y rojas — no hay forma de ordenarlos sin un partido de desempate. */
 export function estanEmpatados(a?: StandingRow, b?: StandingRow): boolean {
   if (!a || !b) return false;
-  return a.points === b.points && a.goalDiff === b.goalDiff && a.amarillas === b.amarillas && a.rojas === b.rojas;
+  return (
+    a.points === b.points &&
+    a.goalDiff === b.goalDiff &&
+    (a.tantosDiff ?? 0) === (b.tantosDiff ?? 0) &&
+    a.amarillas === b.amarillas &&
+    a.rojas === b.rojas
+  );
 }
 
 /**
@@ -134,6 +181,8 @@ export interface ZonasCategoria {
   grupos: GrupoRow[];
   /** Tarjetas de los partidos de grupo finalizados, por equipo. */
   tarjetas: Map<string, Tarjetas>;
+  /** Vóley: tantos de cada partido de grupo finalizado, para desempatar. */
+  tantos: Map<string, TantosPartido>;
 }
 
 /**
@@ -142,7 +191,7 @@ export interface ZonasCategoria {
  * grupo, así se ven igual mientras se arman los grupos. Para generar cruces
  * se usan las zonas reales de `computeZonesForCategoria`, nunca estas.
  */
-export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas }: ZonasCategoria, cat: Categoria): ZoneStandings[] {
+export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas, tantos }: ZonasCategoria, cat: Categoria): ZoneStandings[] {
   if (grupos.length === 0) return zones;
   const asignados = new Set(zones.flatMap((z) => z.rows.map((r) => r.team.id)));
   const sinGrupo = equipos.filter((e) => !asignados.has(e.id)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -163,9 +212,27 @@ export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas }:
       id: "sin-grupo",
       nombre: visibles.length > 0 ? "Sin grupo asignado" : "",
       completa: false,
-      rows: computeStandings(sinGrupo, finalizadosEntreEllos, cat, tarjetas)
+      rows: computeStandings(sinGrupo, finalizadosEntreEllos, cat, tarjetas, false, tantos)
     }
   ];
+}
+
+async function tantosPorPartido(partidoIds: string[]): Promise<Map<string, TantosPartido>> {
+  const map = new Map<string, TantosPartido>();
+  if (!supabase || partidoIds.length === 0) return map;
+
+  const { data } = await supabase
+    .from("sets_voley")
+    .select("partido_id, puntos_local, puntos_visitante")
+    .in("partido_id", partidoIds);
+
+  for (const row of (data as { partido_id: string; puntos_local: number | null; puntos_visitante: number | null }[]) ?? []) {
+    const cur = map.get(row.partido_id) ?? { local: 0, visitante: 0 };
+    cur.local += row.puntos_local ?? 0;
+    cur.visitante += row.puntos_visitante ?? 0;
+    map.set(row.partido_id, cur);
+  }
+  return map;
 }
 
 async function cardCountsFor(partidoIds: string[]): Promise<Map<string, Tarjetas>> {
@@ -195,36 +262,54 @@ async function cardCountsFor(partidoIds: string[]): Promise<Map<string, Tarjetas
 }
 
 /**
+ * Tablas casi estáticas de una categoría, ya filtradas, para que quien las
+ * tenga en caché (la vista pública) no las vuelva a pedir. Sin esto se piden
+ * a la base, como hace el panel de admin, que necesita ver lo último.
+ */
+export interface DatosEstaticosCategoria {
+  equipos: EquipoRow[];
+  grupos: GrupoRow[];
+  grupoEquipos: { grupo_id: string; equipo_id: string }[];
+}
+
+/**
  * Tabla (por zona si hay grupos cargados) de una categoría. Los partidos de
  * fase eliminatoria se excluyen siempre: una vez que hay cruces generados,
  * esos resultados no deben sumar de nuevo en la tabla de grupos.
  */
-export async function computeZonesForCategoria(cat: Categoria): Promise<ZonasCategoria> {
-  if (!supabase) return { zones: [], equipos: [], partidos: [], grupos: [], tarjetas: new Map() };
+export async function computeZonesForCategoria(cat: Categoria, estaticos?: DatosEstaticosCategoria): Promise<ZonasCategoria> {
+  if (!supabase) return { zones: [], equipos: [], partidos: [], grupos: [], tarjetas: new Map(), tantos: new Map() };
+  const client = supabase;
 
-  const [{ data: equiposData }, { data: partidosData }, { data: gruposData }] = await Promise.all([
-    supabase.from("equipos").select("*").eq("categoria_id", cat.id),
-    supabase.from("partidos").select("*").eq("categoria_id", cat.id),
-    supabase.from("grupos").select("*").eq("categoria_id", cat.id)
+  const [equipos, partidos, grupos] = await Promise.all([
+    estaticos
+      ? estaticos.equipos
+      : client.from("equipos").select("*").eq("categoria_id", cat.id).then(({ data }) => (data as EquipoRow[]) ?? []),
+    client.from("partidos").select("*").eq("categoria_id", cat.id).then(({ data }) => (data as PartidoRow[]) ?? []),
+    estaticos
+      ? estaticos.grupos
+      : client.from("grupos").select("*").eq("categoria_id", cat.id).then(({ data }) => (data as GrupoRow[]) ?? [])
   ]);
-
-  const equipos = (equiposData as EquipoRow[]) ?? [];
-  const partidos = (partidosData as PartidoRow[]) ?? [];
-  const grupos = (gruposData as GrupoRow[]) ?? [];
   const partidosDeGrupo = partidos.filter((p) => !p.ronda_eliminatoria && p.equipo_visitante_id);
   const finalizadosDeGrupo = partidosDeGrupo.filter((p) => p.estado === "finalizado");
-  const tarjetas = await cardCountsFor(finalizadosDeGrupo.map((p) => p.id));
+  const idsFinalizados = finalizadosDeGrupo.map((p) => p.id);
+  const [tarjetas, tantos] = await Promise.all([
+    cardCountsFor(idsFinalizados),
+    cat.deporte === "voley" ? tantosPorPartido(idsFinalizados) : Promise.resolve(new Map<string, TantosPartido>())
+  ]);
 
   let zones: ZoneStandings[];
   if (grupos.length > 0) {
-    const { data: geData } = await supabase
-      .from("grupo_equipos")
-      .select("*")
-      .in(
-        "grupo_id",
-        grupos.map((g) => g.id)
-      );
-    const ge = (geData as { grupo_id: string; equipo_id: string }[]) ?? [];
+    const ge = estaticos
+      ? estaticos.grupoEquipos
+      : await client
+          .from("grupo_equipos")
+          .select("*")
+          .in(
+            "grupo_id",
+            grupos.map((g) => g.id)
+          )
+          .then(({ data }) => (data as { grupo_id: string; equipo_id: string }[]) ?? []);
     zones = [...grupos]
       .sort((a, b) => a.nombre.localeCompare(b.nombre))
       .map((g) => {
@@ -241,13 +326,13 @@ export async function computeZonesForCategoria(cat: Categoria): Promise<ZonasCat
           id: g.id,
           nombre: g.nombre,
           completa,
-          rows: computeStandings(equiposZona, partidosZona.filter((p) => p.estado === "finalizado"), cat, tarjetas, completa)
+          rows: computeStandings(equiposZona, partidosZona.filter((p) => p.estado === "finalizado"), cat, tarjetas, completa, tantos)
         };
       });
   } else {
     const completa = zonaCompleta(equipos.map((e) => e.id), partidosDeGrupo);
-    zones = [{ id: "general", nombre: "", completa, rows: computeStandings(equipos, finalizadosDeGrupo, cat, tarjetas, completa) }];
+    zones = [{ id: "general", nombre: "", completa, rows: computeStandings(equipos, finalizadosDeGrupo, cat, tarjetas, completa, tantos) }];
   }
 
-  return { zones, equipos, partidos, grupos, tarjetas };
+  return { zones, equipos, partidos, grupos, tarjetas, tantos };
 }

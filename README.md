@@ -1,135 +1,319 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/logo-bosco-cup-dark.png">
+  <img src="public/logo-bosco-cup.png" alt="Logo de BoscoCup" width="160">
+</picture>
+
 # BoscoCup
 
-App en vivo para seguir un torneo de fútbol, vóley y básquet desde el celular: resultados, tablas de posiciones y cruces, sin necesidad de registrarse. Tiene además un panel de administración (equipos, jugadores, canchas, partidos, veedores) y un panel de veedor con login por PIN (ver **Estado del proyecto**).
+**El torneo, en vivo, en tu celular.**
 
-## Stack y por qué
+Resultados al instante · Tablas de posiciones · Cuadro de playoffs
 
-- **React + Vite + TypeScript**: build rápido, buen soporte de PWA, tipado para la lógica crítica (fixture, desempates, reglas por deporte).
-- **Tailwind CSS**: utilidades para el layout; los componentes con identidad propia (marcador, tabla, cruces) tienen su CSS dedicado en `src/index.css`.
-- **Supabase** (Postgres + Realtime + Auth + RLS) en vez de Firebase: el modelo de datos del torneo es muy relacional (partidos → eventos → sets/cuartos → formaciones, con llaves foráneas por todos lados), algo que Postgres modela mejor que una base documental. Realtime de Supabase permite suscribirse a cambios de fila (ej. nuevos `eventos_partido`) sin backend propio, y RLS deja los tres roles (público, veedor, admin) definidos como políticas SQL en vez de lógica repetida en el cliente.
-- **Prisma** para manejar la estructura de la base (`prisma/schema.prisma`): tablas, columnas y relaciones se editan ahí y se aplican con `npx prisma db push`, en vez de escribir `CREATE TABLE` a mano. Importante — Prisma **no** es la capa de datos de la app en tiempo real: el front-end (`src/`) sigue hablando con Supabase vía `@supabase/supabase-js` (REST + Realtime, respeta RLS, funciona desde el navegador). Prisma Client necesita una conexión directa a Postgres que nunca debe exponerse en el navegador, así que solo se usa para herramientas locales: `db push`, `db seed`, `studio`. Row Level Security tampoco se puede describir en `schema.prisma` — esas políticas viven en SQL aparte (`supabase/migrations/0001_policies.sql`) y se aplican después del `db push`.
-- **Koyeb**: hosting del contenedor Docker de la app (ver `Dockerfile`). Supabase se mantiene como servicio separado (su propio hosting administrado para la base y Realtime).
+![Fútbol masculino](https://img.shields.io/badge/F%C3%BAtbol-masculino-0f2147?style=for-the-badge)
+![Fútbol femenino](https://img.shields.io/badge/F%C3%BAtbol-femenino-0f2147?style=for-the-badge)
+![Vóley mixto](https://img.shields.io/badge/V%C3%B3ley-mixto-e3262e?style=for-the-badge)
 
-## Cómo correr el proyecto
+📅 **Domingo 22 de noviembre de 2026** · ⏰ Primer partido a las **9:30**
+
+</div>
+
+---
+
+## 🏆 ¿Qué es BoscoCup?
+
+BoscoCup es una página web hecha para el torneo. Sirve para que **cualquiera pueda seguir los partidos desde el celular**, aunque no esté al lado de la cancha:
+
+- ⚽ ¿Cómo va el partido de mi equipo? → lo ves **en vivo**, con el marcador cambiando solo.
+- 📊 ¿En qué puesto quedamos? → la **tabla** se actualiza apenas termina cada partido.
+- 🔀 ¿Contra quién jugamos en playoffs? → el **cuadro** se arma solo cuando terminan los grupos.
+
+**No hace falta registrarse ni descargar nada**: se entra al link y listo. Si se quiere, se puede "instalar" en el celular para tenerla como una app más.
+
+<div align="center">
+<img src="manual-veedores/img/01-inicio.jpg" alt="Pantalla de inicio de BoscoCup" width="260">
+<br>
+<sub>La pantalla de inicio: arriba se elige el deporte y la rama; abajo, las secciones.</sub>
+</div>
+
+---
+
+## 👥 ¿Quién la usa?
+
+La app tiene tres partes, una para cada tipo de persona.
+
+### 👀 1. El público: cualquiera que quiera seguir el torneo
+
+Entra al link y, con la barra de abajo, se mueve entre cuatro secciones:
+
+| Sección | Qué muestra |
+|---|---|
+| 🏠 **Inicio** | Los partidos que se están jugando **ahora mismo** y un resumen de la tabla y los cruces. |
+| 📊 **Tabla** | Las posiciones de cada grupo: partidos jugados, ganados, empatados, perdidos, goles, tarjetas y puntos. |
+| 🔀 **Cruces** | El cuadro de playoffs, que se completa a medida que avanzan los equipos. |
+| 📜 **Historial** | Todos los resultados de los partidos ya terminados. |
+
+Tocando cualquier equipo se abre su **ficha**: jugadores, partidos jugados y posición.
+
+Arriba se elige **Fútbol** o **Vóley mixto** y, en fútbol, **Masculino** o **Femenino**. También hay un botón 🌙 para usar la app en **modo oscuro**.
+
+### 📋 2. El veedor: quien anota lo que pasa en el partido
+
+En cada partido hay un veedor que, desde su celular, va cargando lo que pasa en la cancha. **Todo lo que carga lo ve el público al instante.**
+
+Para entrar usa un **PIN de 6 dígitos** que le da el organizador, y ve **solo los partidos que le tocan**.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="manual-veedores/img/09-marcador.jpg" alt="Pantalla del veedor en un partido de fútbol" width="230">
+<br><b>⚽ Fútbol</b><br>
+<sub>Botones grandes para <b>Gol</b>, <b>Amarilla</b> y <b>Roja</b>; más chicos para gol en contra e incidencias. Abajo queda el registro de todo lo que pasó.</sub>
+</td>
+<td align="center" width="50%">
+<img src="manual-veedores/img/13-voley-puntos.jpg" alt="Pantalla del veedor en un partido de vóley" width="230">
+<br><b>🏐 Vóley</b><br>
+<sub>Un botón gigante por equipo para sumar cada punto. La app avisa cuándo se puede cerrar el set y cuándo termina el partido.</sub>
+</td>
+</tr>
+</table>
+
+Algunas cosas que le hacen la vida fácil al veedor:
+
+- ↩️ **Si se equivoca, puede deshacer** el último evento.
+- 📶 **Si se corta internet** en la cancha, la app guarda lo cargado y lo sube sola cuando vuelve la señal.
+- 🟨 **Le avisa si un jugador está suspendido** por tarjetas de partidos anteriores.
+- ⏱️ Tiene un **cronómetro** con la duración que corresponde a cada partido.
+
+Cuando el veedor toca **Finalizar partido**, el resultado pasa automáticamente a la tabla.
+
+📖 Hay un **manual paso a paso con capturas** para veedores en [`manual-veedores/`](manual-veedores/).
+
+### 🛠️ 3. El organizador: quien arma el torneo
+
+Entra con email y contraseña al **panel de administración**, desde donde maneja todo:
+
+- 👕 **Equipos y jugadores**: carga los equipos de cada categoría y sus planteles (con el capitán marcado).
+- 🏟️ **Canchas**: qué canchas hay y para qué deporte sirve cada una.
+- 📅 **Partidos**: programa los partidos de grupo (cancha y horario) y le asigna un veedor a cada uno.
+- 🔀 **Cruces**: cuando terminan los grupos, genera el cuadro de playoffs con un botón.
+- 🔑 **Veedores**: crea las cuentas de los veedores. El PIN se muestra **una sola vez**: hay que anotarlo y pasárselo al veedor.
+- ✏️ **Correcciones**: si hubo un error en un resultado, lo puede arreglar.
+
+---
+
+## 📐 ¿Cómo funciona el torneo?
+
+### 1️⃣ Fase de grupos
+
+Los equipos de cada categoría se dividen en grupos y **juegan todos contra todos** dentro de su grupo. Cada partido suma puntos a la tabla:
+
+<table>
+<tr>
+<th>⚽ Fútbol</th>
+<th>🏐 Vóley <sub>(al mejor de 3 sets)</sub></th>
+</tr>
+<tr>
+<td valign="top">
+
+| Resultado | Puntos |
+|---|:-:|
+| Victoria | **3** |
+| Empate | **1** |
+| Derrota | **0** |
+
+</td>
+<td valign="top">
+
+| Resultado | Ganador | Perdedor |
+|---|:-:|:-:|
+| 2 sets a 0 | **3** | **0** |
+| 2 sets a 1 | **2** | **1** |
+
+</td>
+</tr>
+</table>
+
+> 💡 En vóley, perder 2-1 da **1 punto**: se premia haber peleado el partido.
+
+**¿Y si dos equipos terminan con los mismos puntos?** La tabla los ordena, en este orden, por:
+
+1. Mejor **diferencia de gol** (en vóley, diferencia de sets).
+2. En vóley, mejor **diferencia de tantos** (los puntos hechos dentro de los sets).
+3. **Menos tarjetas amarillas.**
+4. **Menos tarjetas rojas.**
+
+Si aun así siguen iguales, la tabla lo marca y se define con un **partido de desempate**.
+
+### 2️⃣ Playoffs
+
+Terminada la fase de grupos, **entran todos los equipos al cuadro**. La posición en el grupo decide el cruce: primero van los 1° de cada grupo, después los 2°, y así. El mejor ubicado juega contra el peor, el segundo contra el anteúltimo, etc. Si los equipos no alcanzan para llenar la ronda, los mejores ubicados **pasan directo** a la siguiente. Según cuántos equipos haya, se juegan octavos, cuartos, semifinales, 3er puesto y final.
+
+- En playoffs **no hay empate**: en fútbol se define por **penales** (tanda de 5).
+- Los partidos de playoffs **no cambian** la tabla de grupos.
+
+### 📏 Reglas que la app tiene en cuenta
+
+| | ⚽ Fútbol | 🏐 Vóley |
+|---|---|---|
+| **Duración** | 35 minutos: 15' + 5' de descanso + 15'. La **final**, 2 tiempos de 20'. | Al mejor de 3 sets a 20 puntos, con 2 de diferencia. |
+| **Planteles** | De 7 a 10 jugadores. La app no deja anotar un jugador número 11. | — |
+| **Tarjetas** | Con **2 amarillas** acumuladas, o una **roja**, el jugador se pierde el **partido siguiente**. | — |
+
+---
+
+## ⚡ ¿Cómo se actualiza todo en vivo?
+
+No hace falta recargar la página. Así viaja un gol desde la cancha hasta el celular de cada persona:
+
+```
+  🥅 Gol en la cancha
+        │
+        ▼
+  📋 El veedor toca "Gol"
+        │
+        ▼
+  ☁️  Se guarda en la base de datos
+        │
+        ▼
+  📱 Todos los celulares que están mirando se enteran solos
+     y actualizan el marcador (y, al final del partido, la tabla)
+```
+
+El día del torneo puede haber mucha gente conectada a la vez, así que la app es cuidadosa con lo que pide:
+
+- 📦 Lo que casi no cambia (equipos, grupos, canchas) se descarga **una sola vez**.
+- 🎯 Con cada gol o tarjeta se vuelve a pedir **solo lo que cambió**, no el torneo entero.
+- 🔄 Si el organizador edita algo, la app también se entera y lo actualiza.
+- 💤 Si el celular estuvo bloqueado un rato, al volver se recarga todo para no mostrar datos viejos.
+
+---
+
+## 🎨 Identidad visual
+
+| | Color | Dónde se usa |
+|---|---|---|
+| ![](https://img.shields.io/badge/-%20%20%20%20%20%20-0f2147?style=flat-square) | **Azul marino** `#0f2147` | Color principal: barra de navegación, marcadores, fútbol |
+| ![](https://img.shields.io/badge/-%20%20%20%20%20%20-e3262e?style=flat-square) | **Rojo** `#e3262e` | Acento: "en vivo", botones importantes, vóley, tarjetas rojas |
+| ![](https://img.shields.io/badge/-%20%20%20%20%20%20-f4c430?style=flat-square) | **Amarillo** `#f4c430` | Tarjetas amarillas |
+| ![](https://img.shields.io/badge/-%20%20%20%20%20%20-12a150?style=flat-square) | **Verde** `#12a150` | Goles y confirmaciones |
+
+Tipografías: **Bricolage Grotesque** para títulos y **Geist** para el texto. La app tiene **modo claro y modo oscuro**, y se adapta sola a la preferencia del celular.
+
+---
+
+<details>
+<summary><h2>🔧 Para quien mantiene la app (parte técnica)</h2></summary>
+
+Esta sección es para quien tenga que instalar, modificar o publicar la app.
+
+### Con qué está hecha
+
+- **React + TypeScript** (con Vite): la app que se ve en el navegador. Se puede instalar en el celular (PWA).
+- **Supabase**: la base de datos, el inicio de sesión y las actualizaciones en vivo. La propia base controla quién puede hacer qué.
+- **Koyeb**: donde está publicada la app.
+
+### Probarla en tu computadora
+
+Necesitás tener instalado [Node.js](https://nodejs.org).
 
 ```bash
 npm install
-cp .env.example .env   # completar con las credenciales de tu proyecto Supabase (opcional)
+```
+
+```bash
 npm run dev
 ```
 
-Sin `.env`, la app levanta igual con datos de ejemplo (`src/lib/mock-data.ts`) para que la demo se vea completa desde el primer momento.
+Después abrí `http://localhost:5173` en el navegador.
 
-## Base de datos (primera vez)
+- **Sin configurar nada**, la app arranca con **datos de ejemplo**, para ver cómo se ve.
+- **Para conectarla a la base real**, copiá `.env.example` a `.env` y completá los datos de tu proyecto de Supabase.
 
-Con `DATABASE_URL` ya completado en `.env` (connection string **directa** de Postgres, no el pooler — Dashboard → Project Settings → Database):
+**Desde el celular**: con la PC y el celular en el **mismo WiFi**, abrí en el celular la dirección "Network" que muestra la terminal (algo como `http://192.168.x.x:5173`). La primera vez Windows puede pedir permiso en el firewall: hay que aceptarlo.
 
-```bash
-# 1) habilitar la extensión que usan los UUID por defecto (una sola vez, SQL Editor de Supabase)
-#    supabase/migrations/0000_extensions.sql
+Direcciones: `/` (público) · `/admin/login` (organizador) · `/veedor/login` (veedores).
 
-# 2) crear todas las tablas a partir de prisma/schema.prisma
-npx prisma db push
+### Armar la base de datos (solo la primera vez)
 
-# 3) cargar el torneo, las 5 categorías y las 5 canchas
-npx prisma db seed
+Hace falta tener en `.env` el `DATABASE_URL` (la conexión **directa** a la base: en Supabase, *Project Settings → Database*).
 
-# 4) aplicar Row Level Security (SQL Editor de Supabase, o psql)
-#    supabase/migrations/0001_policies.sql
-```
-
-Para explorar o editar los datos con una interfaz visual: `npm run db:studio` (abre Prisma Studio).
-
-Scripts auxiliares (usan `DATABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` del `.env`, nunca viajan al navegador):
-- `node scripts/run-sql.mjs <archivo.sql>` — corre un `.sql` cualquiera contra la base (lo necesitás para `0000_extensions.sql` y `0001_policies.sql`).
-- `node scripts/create-admin.mjs <email> <password> <nombre>` — da de alta un usuario admin (Auth + `profiles`) sin pasar por el Dashboard.
-
-Para cambiar la estructura **más adelante** (una vez que `0001_policies.sql` ya corrió): **no uses `npx prisma db push`** — Prisma no puede introspeccionar la base porque `profiles` tiene un FK a `auth.users` (un schema que Prisma no conoce) y `db push` corta con el error `P4002`. Intentar "arreglarlo" declarando `auth.users` en el schema es **peligroso**: Prisma pasa a tratar esa tabla como propia y, al no conocer sus columnas reales (las de Supabase Auth), el próximo `db push` propone borrarlas todas — tirarías abajo el login de toda la app. En este proyecto, un cambio de estructura se hace así:
-1. Editá `prisma/schema.prisma` (documentación/tipos — Prisma Client lo usa para generar los tipos de `seed.ts` y los scripts, aunque nunca se vuelva a correr `db push`).
-2. Escribí el `ALTER TABLE`/`CREATE TABLE` a mano en un archivo nuevo de `supabase/migrations/000N_lo-que-sea.sql`.
-3. Corré `node scripts/run-sql.mjs supabase/migrations/000N_lo-que-sea.sql`.
-4. `npx prisma generate` si cambiaste tipos usados por Prisma Client.
-
-### Primer usuario admin
-
-1. Dashboard de Supabase → Authentication → Users → **Add user** (email + contraseña, tildar "Auto confirm user").
-2. Authentication → Providers → Email → desactivar **"Confirm email"** (si no, los veedores que se crean desde el panel con PIN no van a poder loguearse).
-3. Copiar el UUID del usuario creado y correr en el SQL Editor:
-   ```sql
-   insert into profiles (id, nombre, rol) values ('<uuid>', 'Tu nombre', 'admin');
+1. Habilitar la extensión necesaria:
+   ```bash
+   node scripts/run-sql.mjs supabase/migrations/0000_extensions.sql
+   ```
+2. Crear las tablas:
+   ```bash
+   npx prisma db push
+   ```
+3. Cargar el torneo, las categorías y las canchas iniciales:
+   ```bash
+   npx prisma db seed
+   ```
+4. Aplicar los permisos y el resto de los ajustes, **en orden**, desde `0001` hasta el último archivo de `supabase/migrations/`:
+   ```bash
+   node scripts/run-sql.mjs supabase/migrations/0001_policies.sql
    ```
 
-Los veedores, en cambio, se crean directamente desde `/admin` → Veedores (PIN de 6 dígitos, sin email).
+Para ver o editar los datos con una interfaz visual: `npm run db:studio`.
 
-## Acceder desde el celular y la PC
+### Crear el primer organizador
 
-En desarrollo (`npm run dev`), Vite ya queda escuchando en la red local (`host: true` en `vite.config.ts`), no solo en `localhost`. La terminal donde corre `npm run dev` muestra dos URLs:
-
-- **Local**: `http://localhost:5173` — para la PC donde corre el servidor.
-- **Network**: `http://<tu-ip-local>:5173` — abrí esa misma URL desde el celular, conectado al **mismo WiFi** que la PC. Windows puede pedir permiso de firewall para Node.js la primera vez — hay que aceptarlo.
-
-Rutas útiles: `/` (público), `/admin/login` (organizador), `/veedor/login` (veedor, PIN).
-
-Esto solo funciona mientras la PC y el celular estén en la misma red y el servidor de desarrollo siga corriendo. Para acceder desde cualquier lugar (no solo el mismo WiFi, el día del torneo por ejemplo) hay que desplegar a Koyeb — ver abajo.
-
-## Deploy en Koyeb
-
-Koyeb puede construir la app directamente desde el `Dockerfile` del repo (deploy desde GitHub → "Dockerfile" como método de build). Variables de entorno a configurar en el servicio de Koyeb:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-(`DATABASE_URL` no hace falta en Koyeb — es solo para correr Prisma en tu máquina). El contenedor sirve la app ya compilada con nginx en el puerto `8080` (configurar ese puerto en el servicio de Koyeb).
-
-## Estructura
-
-```
-prisma/schema.prisma       estructura de la base (tablas, columnas, relaciones)
-prisma/seed.ts             carga el torneo, categorías y canchas iniciales
-supabase/migrations/       lo que Prisma no modela: extensión pgcrypto y políticas de RLS
-src/
-  components/icons.tsx      set de íconos propios (sin emojis)
-  components/ProtectedRoute.tsx  guarda de rutas por rol
-  lib/auth.tsx               sesión y rol del usuario actual (AuthProvider / useAuth)
-  lib/supabase.ts            cliente de Supabase (null si no hay credenciales)
-  lib/mock-data.ts           datos de ejemplo para la demo pública
-  lib/db-types.ts            tipos de las tablas de la base
-  pages/PublicHome.tsx            vista pública: en vivo, tabla y cruces
-  pages/admin/                login, layout y pantallas del panel admin
-  pages/veedor/               login y "mis partidos" del panel veedor
-  types.ts                    tipos de la vista pública
+```bash
+node scripts/create-admin.mjs <email> <contraseña> <nombre>
 ```
 
-## Modelo de datos (resumen)
+Además, en Supabase: *Authentication → Providers → Email* → desactivar **"Confirm email"**. Si no, los veedores no van a poder entrar con su PIN.
 
-`torneos` → `categorias` (deporte + rama) → `equipos` → `jugadores`. Los partidos (`partidos`) se agrupan en `grupos` (fase de grupos) o quedan sueltos con `ronda_eliminatoria` (fase eliminatoria). `eventos_partido` es la fuente de verdad de todo lo que pasa en un partido (goles, tarjetas, puntos, faltas, cambios); `sets_voley`, `cuartos_basquet` y `formaciones` son el detalle propio de cada deporte. `asignaciones_veedor` controla qué veedor puede cargar qué partido. `sanciones`, `avisos` y `auditoria` cubren disciplina, comunicados del organizador y trazabilidad de cambios.
+Los veedores **no** se crean así: los crea el organizador desde el panel (`/admin` → Veedores).
 
-## Roles y privilegios
+### Hacer cambios en la base de datos más adelante
 
-| | Público | Veedor | Admin |
+> ⚠️ **Una vez armada la base, no vuelvas a usar `npx prisma db push`.** Puede proponer borrar la tabla de usuarios y dejar a todos sin poder iniciar sesión.
+
+Para cambiar la estructura:
+
+1. Escribí el cambio en SQL en un archivo nuevo dentro de `supabase/migrations/`, siguiendo la numeración (por ejemplo `0013_lo-que-sea.sql`).
+2. Corrélo:
+   ```bash
+   node scripts/run-sql.mjs supabase/migrations/0013_lo-que-sea.sql
+   ```
+3. Actualizá `prisma/schema.prisma` para que siga reflejando cómo es la base, y corré `npx prisma generate`.
+
+### Quién puede hacer qué
+
+| | Público | Veedor | Organizador |
 |---|---|---|---|
-| Login | No hace falta | PIN de 6 dígitos | Email + contraseña |
-| Ver torneo, tablas, cruces, en vivo | ✅ | ✅ | ✅ |
-| Cargar eventos/sets/cuartos/formación | — | Solo en sus partidos asignados, nunca si ya finalizaron | ✅ en cualquier partido |
-| Alta de equipos, jugadores, canchas, veedores | — | — | ✅ |
+| Cómo entra | No necesita | PIN de 6 dígitos | Email y contraseña |
+| Ver partidos, tablas y cruces | ✅ | ✅ | ✅ |
+| Cargar lo que pasa en un partido | — | Solo en sus partidos y mientras no estén finalizados | ✅ en cualquiera |
+| Equipos, jugadores, canchas y veedores | — | — | ✅ |
 | Programar partidos y asignar veedores | — | — | ✅ |
-| Auditoría, sanciones, corrección de resultados | — | — | ✅ |
+| Corregir resultados | — | — | ✅ |
 
-Esto está impuesto por RLS en la base (`supabase/migrations/0001_policies.sql`), no solo oculto en la interfaz — aunque alguien manipule el cliente, Postgres rechaza la operación si no cumple la política.
+Estos permisos los controla **la base de datos**, no solo la pantalla: aunque alguien intentara saltearse la interfaz, la base rechaza lo que no le corresponde.
 
-El login de veedor por PIN funciona así: el admin, al crear un veedor desde `/admin/veedores`, da de alta una cuenta de Supabase Auth con un email sintético derivado del PIN (`veedor-<pin>@boscocup.local`) y el PIN como contraseña — usando un cliente de Supabase aparte que no pisa la sesión del admin (`createProvisioningClient` en `src/lib/supabase.ts`). El PIN se muestra una sola vez al crearlo; no se guarda en texto plano en ningún lado.
+### Publicar la app (Koyeb)
 
-## Estado del proyecto
+Koyeb arma la app solo a partir del repositorio de GitHub, usando el `Dockerfile`. En el servicio hay que configurar:
 
-- [x] Fase 0 — Identidad visual y style tile (aprobado)
-- [x] Fase 1 — Arquitectura, stack y esquema de base de datos
-- [x] Vista pública (en vivo / tabla / cruces) con datos de ejemplo
-- [x] Fase 2 — Auth, roles (admin/veedor/público) y RLS de punta a punta
-- [x] Panel admin — equipos, jugadores, canchas, veedores, carga manual de partidos
-- [x] Panel veedor — login por PIN y "mis partidos"
-- [ ] Generación automática de grupos, fixture y programación con detección de conflictos (hoy la carga de partidos es manual)
-- [x] Panel del veedor — fútbol: formación, cronómetro, gol/amarilla/roja/doble amarilla/cambio/penal/incidencia, deshacer, modo offline
-- [ ] Panel del veedor — vóley y básquet (sets / cuartos)
-- [x] Vista pública conectada a Supabase en tiempo real (`src/lib/public-data.ts`; usa datos de ejemplo solo si no hay credenciales configuradas)
-- [x] Carrusel de partidos en vivo (todos los deportes, auto-avanza) y tablas por zona cuando hay grupos cargados
-- [ ] Disciplina, auditoría, exportaciones, notificaciones y modo TV
+- Las variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (las mismas que en `.env`).
+- El puerto **8080**.
+
+### Dónde está cada cosa
+
+```
+src/pages/PublicHome.tsx    la vista pública
+src/pages/admin/            el panel del organizador
+src/pages/veedor/           el panel del veedor (fútbol y vóley)
+src/lib/standings.ts        cómo se calculan las tablas y los desempates
+src/lib/bracket.ts          cómo se arma el cuadro de playoffs
+src/lib/reglas.ts           horarios y reglas del reglamento
+src/lib/suspensiones.ts     quién está suspendido por tarjetas
+src/lib/mock-data.ts        los datos de ejemplo
+supabase/migrations/        cambios a la base de datos y permisos, en orden
+manual-veedores/            el manual para los veedores
+```
+
+</details>

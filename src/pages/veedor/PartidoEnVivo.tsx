@@ -5,7 +5,7 @@ import { cancelQueuedInsert, insertWithFallback, isQueued, updateWithFallback } 
 import { useSyncStatus } from "@/lib/use-sync-status";
 import { useMatchClock } from "@/lib/use-match-clock";
 import type { EquipoRow, EventoPartidoRow, EventoTipo, JugadorRow, PartidoEstado } from "@/lib/db-types";
-import { IconCard, IconGol, IconGoalOwn, IconIncidencia, IconSub, IconSync, IconUndo } from "@/components/icons";
+import { IconCard, IconGol, IconGoalOwn, IconIncidencia, IconSync, IconUndo } from "@/components/icons";
 import { FUTBOL, minutosPorTiempo } from "@/lib/reglas";
 import { fetchTarjetasEquipo, type Suspension } from "@/lib/suspensiones";
 
@@ -37,7 +37,6 @@ const ACCIONES: { tipo: EventoTipo; label: string; icon: typeof IconGol; classNa
 
 /** Casos menos frecuentes, en botones más chicos. */
 const ACCIONES_EXTRA: { tipo: EventoTipo; label: string; icon: typeof IconGol }[] = [
-  { tipo: "cambio", label: "Cambio", icon: IconSub },
   { tipo: "gol_en_contra", label: "Gol en contra", icon: IconGoalOwn },
   { tipo: "incidencia", label: "Incidencia", icon: IconIncidencia }
 ];
@@ -167,16 +166,6 @@ export function PartidoEnVivo({
     }
     return m;
   }, [eventos]);
-
-  const cambiosPorEquipo = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const e of eventos) {
-      if (e.anulado || e.tipo !== "cambio" || !e.equipo_id) continue;
-      m.set(e.equipo_id, (m.get(e.equipo_id) ?? 0) + 1);
-    }
-    return m;
-  }, [eventos]);
-  const sinCambios = (equipoId: string) => (cambiosPorEquipo.get(equipoId) ?? 0) >= FUTBOL.maxCambios;
 
   function jugadoresDe(equipoId: string): JugadorRow[] {
     return equipoId === equipoLocal.id ? jugadoresLocal : jugadoresVisitante;
@@ -426,30 +415,18 @@ export function PartidoEnVivo({
             {sheet.step === "equipo" && (
               <div className="sheet-options">
                 <button
-                  className={`sheet-option ${sheet.tipo === "cambio" && sinCambios(equipoLocal.id) ? "disabled-look" : ""}`}
-                  disabled={sheet.tipo === "cambio" && sinCambios(equipoLocal.id)}
+                  className="sheet-option"
                   onClick={() => setSheet({ ...sheet, equipoId: equipoLocal.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}
                 >
                   <span className="color-dot" style={{ background: equipoLocal.color_primario }} />
                   {equipoLocal.nombre}
-                  {sheet.tipo === "cambio" && (
-                    <span className="sheet-option-note">
-                      {cambiosPorEquipo.get(equipoLocal.id) ?? 0}/{FUTBOL.maxCambios} cambios
-                    </span>
-                  )}
                 </button>
                 <button
-                  className={`sheet-option ${sheet.tipo === "cambio" && sinCambios(equipoVisitante.id) ? "disabled-look" : ""}`}
-                  disabled={sheet.tipo === "cambio" && sinCambios(equipoVisitante.id)}
+                  className="sheet-option"
                   onClick={() => setSheet({ ...sheet, equipoId: equipoVisitante.id, step: sheet.tipo === "incidencia" ? "texto" : "jugador" })}
                 >
                   <span className="color-dot" style={{ background: equipoVisitante.color_primario }} />
                   {equipoVisitante.nombre}
-                  {sheet.tipo === "cambio" && (
-                    <span className="sheet-option-note">
-                      {cambiosPorEquipo.get(equipoVisitante.id) ?? 0}/{FUTBOL.maxCambios} cambios
-                    </span>
-                  )}
                 </button>
                 {sheet.tipo === "incidencia" && (
                   <button className="sheet-option" onClick={() => setSheet({ ...sheet, equipoId: undefined, step: "texto" })}>
@@ -461,12 +438,6 @@ export function PartidoEnVivo({
 
             {sheet.step === "jugador" && equipoSel && (
               <div className="sheet-options">
-                {sheet.tipo === "cambio" && (
-                  <p className="form-hint" style={{ margin: "0 0 4px" }}>
-                    Elegí al jugador de {equipoSel.nombre} que entra. Quedan{" "}
-                    {FUTBOL.maxCambios - (cambiosPorEquipo.get(equipoSel.id) ?? 0)} de {FUTBOL.maxCambios} cambios.
-                  </p>
-                )}
                 {sheet.tipo === "gol_en_contra" && (
                   <p className="form-hint" style={{ margin: "0 0 4px" }}>
                     Elegí al jugador de {equipoSel.nombre} que la metió en su arco: el gol se suma al rival.

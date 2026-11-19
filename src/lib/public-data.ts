@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
-import type { CanchaRow, Categoria, EquipoRow, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
+import type { Categoria, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
 import { computeZonesForCategoria, teamFrom, zonasParaMostrar } from "@/lib/standings";
+import { getCanchas, getCategorias, getEquipos, getGrupoEquipos, getGrupos } from "@/lib/static-cache";
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
 
@@ -39,6 +40,8 @@ export interface PublicData {
   zones: ZoneStandings[];
   bracket: BracketMatch[];
   historial: HistorialMatch[];
+  /** Categoría mostrada; sirve para ignorar eventos realtime de otras categorías. */
+  categoriaId?: string;
 }
 
 const EMPTY: PublicData = { zones: [], bracket: [], historial: [] };
@@ -57,13 +60,11 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
   const partidos = ((partidosData as PartidoRow[]) ?? []).filter((p) => p.equipo_visitante_id);
   if (partidos.length === 0) return [];
 
-  const equipoIds = Array.from(new Set(partidos.flatMap((p) => [p.equipo_local_id, p.equipo_visitante_id as string])));
-  const canchaIds = Array.from(new Set(partidos.map((p) => p.cancha_id).filter((id): id is string => Boolean(id))));
-
-  const [{ data: categoriasData }, { data: equiposData }, { data: canchasData }, { data: eventosData }] = await Promise.all([
-    supabase.from("categorias").select("*"),
-    supabase.from("equipos").select("*").in("id", equipoIds),
-    canchaIds.length ? supabase.from("canchas").select("*").in("id", canchaIds) : Promise.resolve({ data: [] as CanchaRow[] }),
+  // Categorías, equipos y canchas salen de la caché; solo los eventos se piden.
+  const [categorias, equipos, canchas, { data: eventosData }] = await Promise.all([
+    getCategorias(),
+    getEquipos(),
+    getCanchas(),
     supabase
       .from("eventos_partido")
       .select("*")
@@ -74,9 +75,9 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
       .eq("anulado", false)
   ]);
 
-  const categoriaMap = new Map(((categoriasData as Categoria[]) ?? []).map((c) => [c.id, c]));
-  const equipoMap = new Map(((equiposData as EquipoRow[]) ?? []).map((e) => [e.id, teamFrom(e)]));
-  const canchaMap = new Map(((canchasData as CanchaRow[]) ?? []).map((c) => [c.id, c.nombre]));
+  const categoriaMap = new Map(categorias.map((c) => [c.id, c]));
+  const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
+  const canchaMap = new Map(canchas.map((c) => [c.id, c.nombre]));
   const eventos = (eventosData as EventoPartidoRow[]) ?? [];
 
   return partidos
@@ -105,27 +106,30 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
 export async function fetchPublicData(sport: Sport, branch: Branch): Promise<PublicData> {
   if (!supabase) return EMPTY;
 
-  const { data: categoria } = await supabase
-    .from("categorias")
-    .select("*")
-    .eq("deporte", sport)
-    .eq("rama", ramaDe(sport, branch))
-    .maybeSingle();
-  if (!categoria) return EMPTY;
-  const cat = categoria as Categoria;
+  const [categorias, todosEquipos, todosGrupos, todosGrupoEquipos, canchas] = await Promise.all([
+    getCategorias(),
+    getEquipos(),
+    getGrupos(),
+    getGrupoEquipos(),
+    getCanchas()
+  ]);
+  // Igual que el .maybeSingle() de antes: si no hay una única categoría, no se muestra nada.
+  const candidatas = categorias.filter((c) => c.deporte === sport && c.rama === ramaDe(sport, branch));
+  if (candidatas.length !== 1) return EMPTY;
+  const cat = candidatas[0];
 
-  const zonas = await computeZonesForCategoria(cat);
+  const gruposCat = todosGrupos.filter((g) => g.categoria_id === cat.id);
+  const grupoIds = new Set(gruposCat.map((g) => g.id));
+  const zonas = await computeZonesForCategoria(cat, {
+    equipos: todosEquipos.filter((e) => e.categoria_id === cat.id),
+    grupos: gruposCat,
+    grupoEquipos: todosGrupoEquipos.filter((ge) => grupoIds.has(ge.grupo_id))
+  });
   const { equipos, partidos, grupos } = zonas;
   const zones = zonasParaMostrar(zonas, cat);
 
   // ---- cruces ----
-  const canchaIdsCruces = Array.from(
-    new Set(partidos.filter((p) => p.ronda_eliminatoria && p.cancha_id).map((p) => p.cancha_id as string))
-  );
-  const { data: canchasCruces } = canchaIdsCruces.length
-    ? await supabase.from("canchas").select("id, nombre").in("id", canchaIdsCruces)
-    : { data: [] as { id: string; nombre: string }[] };
-  const canchaMap = new Map(((canchasCruces as { id: string; nombre: string }[]) ?? []).map((c) => [c.id, c.nombre]));
+  const canchaMap = new Map(canchas.map((c) => [c.id, c.nombre]));
   const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
   const bracket: BracketMatch[] = partidos
     .filter((p) => p.ronda_eliminatoria && equipoMap.has(p.equipo_local_id))
@@ -179,5 +183,5 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
         : ""
     }));
 
-  return { zones, bracket, historial };
+  return { zones, bracket, historial, categoriaId: cat.id };
 }
