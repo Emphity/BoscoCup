@@ -76,6 +76,8 @@ export interface PartidoRow {
   resultado_visitante: number | null;
   penales_local: number | null;
   penales_visitante: number | null;
+  /** Lugar del partido dentro de su ronda de playoff (0, 1, 2…). */
+  llave_pos?: number | null;
   created_at?: string;
 }
 

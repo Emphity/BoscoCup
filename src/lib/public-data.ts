@@ -142,7 +142,9 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
         else if (definidoPorPenales) winnerId = (pl as number) > (pv as number) ? p.equipo_local_id : p.equipo_visitante_id;
       }
       return {
+        id: p.id,
         round: p.ronda_eliminatoria as string,
+        pos: p.llave_pos ?? null,
         home: equipoMap.get(p.equipo_local_id) as Team,
         away: p.equipo_visitante_id ? equipoMap.get(p.equipo_visitante_id) ?? null : null,
         homeScore: p.resultado_local,

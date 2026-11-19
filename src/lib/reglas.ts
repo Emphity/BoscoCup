@@ -51,7 +51,9 @@ export const AMARILLAS_PARA_SUSPENSION = 2;
 export const VOLEY = {
   puntosPorSet: 20,
   diferenciaMinima: 2,
-  setsParaGanar: 2
+  setsParaGanar: 2,
+  /** Lo que se reserva de cancha por partido al programar los playoffs. */
+  minutosPorTurno: 40
 } as const;
 
 /** true si el set ya se puede cerrar según el reglamento. */

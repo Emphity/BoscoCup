@@ -2698,3 +2698,390 @@ table.data-table td {
 .back-link:hover {
   color: var(--color-brand);
 }
+
+/* ============================================================================
+   Cuadro de playoffs espejado (BracketView)
+   ============================================================================ */
+.bk {
+  --bk-line: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+  --bk-gap: 16px;
+  --bk-card-w: 164px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  margin: 0 -4px;
+  padding: 4px 4px 10px;
+}
+.bk-grid {
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  margin: 0 auto;
+}
+.bk-col {
+  display: flex;
+  flex-direction: column;
+}
+.bk-col-head {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding: 0 0 10px;
+}
+.bk-col-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: max(calc(var(--filas) * 104px), 520px);
+}
+.bk-col.center .bk-col-body {
+  justify-content: center;
+  align-items: center;
+}
+.bk-pair {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+}
+.bk-slot {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Separación y líneas: izquierda avanza a la derecha, derecha a la izquierda. */
+.bk-col.left .bk-slot {
+  padding-right: var(--bk-gap);
+}
+.bk-col.left .bk-slot.in {
+  padding-left: var(--bk-gap);
+}
+.bk-col.right .bk-slot {
+  padding-left: var(--bk-gap);
+}
+.bk-col.right .bk-slot.in {
+  padding-right: var(--bk-gap);
+}
+.bk-col .bk-slot::after,
+.bk-col .bk-slot.in::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--bk-gap);
+  border-top: 2px solid var(--bk-line);
+}
+.bk-col.left .bk-slot::after {
+  right: 0;
+}
+.bk-col.left .bk-slot.in::before {
+  left: 0;
+}
+.bk-col.right .bk-slot::after {
+  left: 0;
+}
+.bk-col.right .bk-slot.in::before {
+  right: 0;
+}
+.bk-pair::before {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  border-right: 2px solid var(--bk-line);
+}
+.bk-col.left .bk-pair::before {
+  right: 0;
+}
+.bk-col.right .bk-pair::before {
+  left: 0;
+}
+.bk-col.center .bk-slot::after,
+.bk-col.center .bk-slot::before {
+  display: none;
+}
+/* Líneas que llegan a la final desde cada semi. */
+.bk-col.center:not(.solo) .final-slot {
+  padding: 0 var(--bk-gap);
+  flex: 0 0 auto;
+}
+.bk-col.center:not(.solo) .final-slot::before,
+.bk-col.center:not(.solo) .final-slot::after {
+  display: block;
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--bk-gap);
+  border-top: 2px solid var(--color-win);
+}
+.bk-col.center .final-slot::before {
+  left: 0;
+}
+.bk-col.center .final-slot::after {
+  right: 0;
+}
+.bk-col.center .final-slot {
+  flex: 0 0 auto;
+}
+
+/* ---- tarjeta de partido ---- */
+.bk-match {
+  width: var(--bk-card-w);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card), inset 0 0 0 1px var(--color-line);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.bk-match.pending {
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+}
+.bk-match.ghost {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-line);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+  font-style: italic;
+  opacity: 0.75;
+}
+.bk-team {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 30px;
+}
+.bk-team + .bk-team {
+  border-top: 1px solid var(--color-line);
+}
+.bk-team-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bk-team-name:disabled {
+  cursor: default;
+}
+.bk-team-name span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 108px;
+}
+.bk-team.tbd .bk-team-name {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.bk-team.win {
+  font-weight: 750;
+}
+.bk-match.done .bk-team:not(.win) {
+  color: var(--color-text-muted);
+}
+.bk-score {
+  font-weight: 750;
+}
+.bk-score small {
+  margin-left: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.bk-meta {
+  border-top: 1px dashed var(--color-line);
+  padding: 4px 0 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* ---- final, campeón y subcampeón ---- */
+.bk-col.center {
+  min-width: calc(var(--bk-card-w) + 2 * var(--bk-gap) + 24px);
+}
+.bk-match.final {
+  --bk-card-w: 196px;
+  box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--color-win) 70%, transparent), inset 0 0 0 2px var(--color-win);
+  font-size: 14px;
+}
+.bk-podio-top,
+.bk-podio-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+/* Arriba y abajo ocupan lo mismo: así la final queda justo en el medio, a la altura de las semis. */
+.bk-podio-top {
+  flex: 1 1 0;
+  justify-content: flex-end;
+  padding-bottom: 14px;
+}
+.bk-podio-bottom {
+  flex: 1 1 0;
+  justify-content: flex-start;
+  padding-top: 14px;
+}
+.bk-logo {
+  height: 96px;
+  width: auto;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.18));
+}
+.bk-champ {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 200px;
+  padding: 12px 18px 12px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-win) 12%, var(--color-surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-win) 55%, transparent);
+  text-align: center;
+}
+.bk-champ.set {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--color-win) 95%, #fff) 0%, var(--color-win) 55%, color-mix(in srgb, var(--color-win) 70%, #8a5a00) 100%);
+  color: var(--color-win-contrast);
+  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--color-win) 85%, transparent);
+}
+.bk-trophy {
+  width: 30px;
+  height: 30px;
+  color: var(--color-win);
+}
+.bk-champ.set .bk-trophy {
+  color: var(--color-win-contrast);
+}
+.bk-champ-label,
+.bk-runner-label,
+.bk-third-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.bk-champ-name,
+.bk-runner-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.bk-champ-name {
+  font-size: 17px;
+  font-weight: 800;
+}
+.bk-champ-name.tbd,
+.bk-runner-name.tbd {
+  font-weight: 600;
+  font-style: italic;
+  opacity: 0.6;
+  cursor: default;
+}
+.bk-runner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 170px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #9aa6bd 60%, transparent);
+  background: color-mix(in srgb, #c7cfdd 14%, var(--color-surface));
+}
+.bk-runner-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.bk-third {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-muted);
+}
+.bk-third .bk-match {
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .bk {
+    --bk-card-w: 156px;
+    --bk-gap: 12px;
+  }
+  .bk-team-name span {
+    max-width: 100px;
+  }
+}
+
+/* ---- admin: cuadro con edición de cancha y hora ---- */
+.bk-admin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.bk-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin: 2px 0 2px;
+  padding: 4px 0;
+  border: 0;
+  border-top: 1px dashed var(--color-line);
+  background: none;
+  color: var(--color-brand);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bk-edit-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.bk-edit {
+  display: grid;
+  gap: 5px;
+  padding: 6px 0 4px;
+  border-top: 1px dashed var(--color-line);
+}
+.bk-edit .input-sm {
+  min-height: 30px;
+  font-size: 12px;
+}
+.bk-edit-actions {
+  display: flex;
+  gap: 5px;
+}
+.bk-edit-actions .btn {
+  flex: 1;
+}

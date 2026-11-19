@@ -53,7 +53,7 @@ function bracket(
   away: Team,
   rest: { homeScore: number | null; awayScore: number | null; winnerId: string | null; pending: boolean; scheduledTime?: string }
 ): BracketMatch {
-  return { round, home, away, penalesHome: null, penalesAway: null, ...rest };
+  return { round, pos: 0, home, away, penalesHome: null, penalesAway: null, ...rest };
 }
 
 function hist(id: string, home: Team, away: Team, homeScore: number, awayScore: number, roundLabel: string, date: string): HistorialMatch {

@@ -44,6 +44,14 @@ export function PartidoRoute() {
   }
 
   if (noEncontrado) return <Navigate to="/veedor" replace />;
+  // Cruce de playoff con el rival todavía sin definir: no se puede cargar.
+  if (partido && !partido.equipo_visitante_id) {
+    return (
+      <div className="auth-loading">
+        Este partido todavía no tiene rival: se define cuando termine el cruce anterior.
+      </div>
+    );
+  }
   if (!partido || !deporte || !equipoLocal || !equipoVisitante) {
     return <div className="auth-loading">Cargando…</div>;
   }

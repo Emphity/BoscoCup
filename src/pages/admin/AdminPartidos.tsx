@@ -176,7 +176,7 @@ export function AdminPartidos() {
       rows.map((p) => ({
         ...p,
         local_nombre: equipoNombre.get(p.equipo_local_id) ?? "—",
-        visitante_nombre: p.equipo_visitante_id ? equipoNombre.get(p.equipo_visitante_id) ?? "—" : "—",
+        visitante_nombre: p.equipo_visitante_id ? equipoNombre.get(p.equipo_visitante_id) ?? "—" : "A definir",
         cancha_nombre: p.cancha_id ? canchaNombre.get(p.cancha_id) ?? "—" : "Sin asignar",
         veedor_id: asignacionPorPartido.get(p.id) ?? null
       }))

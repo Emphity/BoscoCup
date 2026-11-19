@@ -85,7 +85,8 @@ export function computeStandings(
   const hayJugados = rows.some((r) => r.played > 0);
   rows.forEach((row, i) => {
     row.position = i + 1;
-    row.qualifies = hayJugados && i < cat.cantidad_clasifican_por_grupo;
+    // Si entran todos a playoffs no se marca a nadie: la tabla solo ordena el cuadro.
+    row.qualifies = hayJugados && cat.cantidad_clasifican_por_grupo < rows.length && i < cat.cantidad_clasifican_por_grupo;
   });
 
   // El aviso de desempate solo tiene sentido con la zona terminada: antes de

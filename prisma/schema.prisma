@@ -253,6 +253,7 @@ model Partido {
   // Solo se completan en partidos de eliminatoria que terminan empatados.
   penalesLocal        Int?          @map("penales_local")
   penalesVisitante    Int?          @map("penales_visitante")
+  llavePos            Int?          @map("llave_pos") // lugar en su ronda de playoff (0011)
   walkoverEquipoId    String?       @map("walkover_equipo_id") @db.Uuid
   motivoEstado        String?       @map("motivo_estado")
   createdAt           DateTime      @default(now()) @map("created_at")

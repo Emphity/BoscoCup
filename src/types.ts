@@ -52,7 +52,10 @@ export interface ZoneStandings {
 }
 
 export interface BracketMatch {
+  id?: string;
   round: string;
+  /** Lugar dentro de la ronda (0, 1, 2…): ubica el partido en el cuadro. */
+  pos?: number | null;
   home: Team;
   away: Team | null;
   homeScore: number | null;

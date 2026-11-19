@@ -1,11 +1,12 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
+import type { Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import { getMockAllLiveMatches, getMockData } from "@/lib/mock-data";
 import { fetchAllLiveMatches, fetchPublicData, type PublicData } from "@/lib/public-data";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DynamicIsland } from "@/components/DynamicIsland";
 import { Segmented } from "@/components/Segmented";
+import { BracketView } from "@/components/BracketView";
 import { TeamSheet, type TeamRef } from "@/components/TeamSheet";
 import {
   IconAccess,
@@ -187,7 +188,7 @@ export function PublicHome() {
               </section>
               <section className="card">
                 <SectionHead title="Cruces" action={() => irA("cruces")} />
-                <Bracket matches={data.bracket} onTeam={abrirEquipo} />
+                <BracketView matches={data.bracket} onTeam={abrirEquipo} />
               </section>
             </div>
           </>
@@ -198,7 +199,12 @@ export function PublicHome() {
             <SectionHead title="Tabla de posiciones" />
             <Standings zones={data.zones} onTeam={abrirEquipo} />
             <p className="legend">
-              <span className="legend-q" /> Clasifica a cruces · Tocá un equipo para ver su ficha
+              {data.zones.some((z) => z.rows.some((r) => r.qualifies)) && (
+                <>
+                  <span className="legend-q" /> Clasifica a cruces ·{" "}
+                </>
+              )}
+              Tocá un equipo para ver su ficha
             </p>
           </section>
         )}
@@ -206,7 +212,7 @@ export function PublicHome() {
         {pestana === "cruces" && (
           <section className="card">
             <SectionHead title="Cruces" />
-            <Bracket matches={data.bracket} onTeam={abrirEquipo} />
+            <BracketView matches={data.bracket} onTeam={abrirEquipo} />
           </section>
         )}
 
@@ -460,51 +466,6 @@ function Standings({ zones, compact, onTeam }: { zones: ZoneStandings[]; compact
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function Bracket({ matches, onTeam }: { matches: BracketMatch[]; onTeam: (t: Team) => void }) {
-  if (matches.length === 0) return <p className="empty-note">Los cruces aparecen cuando termina la fase de grupos.</p>;
-  const rondas = Array.from(new Set(matches.map((m) => m.round)));
-  return (
-    <div className="rounds">
-      {rondas.map((ronda) => (
-        <div className="round" key={ronda}>
-          <div className="zone-name">{ronda}</div>
-          {matches
-            .filter((m) => m.round === ronda)
-            .map((m, i) => {
-              const penales = m.penalesHome !== null && m.penalesAway !== null;
-              const empatadoSinDefinir = !m.pending && m.homeScore === m.awayScore && !penales;
-              return (
-                <div className={`duel ${m.pending ? "pending" : ""}`} key={`${ronda}-${i}`}>
-                  {[
-                    [m.home, m.homeScore, m.penalesHome],
-                    [m.away, m.awayScore, m.penalesAway]
-                  ].map(([team, sc, pen], k) => (
-                    <div className={`duel-row ${team && m.winnerId === (team as Team).id ? "win" : ""}`} key={k}>
-                      {team ? <TeamName team={team as Team} onTeam={onTeam} strong={m.winnerId === (team as Team).id} /> : <span className="tbd">A definir</span>}
-                      {!m.pending && (
-                        <span className="score tnum">
-                          {sc as number}
-                          {penales && <small>({pen as number})</small>}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  {m.pending && (
-                    <span className="duel-time">
-                      {m.scheduledTime ?? "Horario a definir"}
-                      {m.court && ` · ${m.court}`}
-                    </span>
-                  )}
-                  {empatadoSinDefinir && <p className="notice">Empate: falta definir por penales.</p>}
-                </div>
-              );
-            })}
-        </div>
-      ))}
     </div>
   );
 }
