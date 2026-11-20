@@ -191,7 +191,11 @@ export interface ZonasCategoria {
  * grupo, así se ven igual mientras se arman los grupos. Para generar cruces
  * se usan las zonas reales de `computeZonesForCategoria`, nunca estas.
  */
-export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas, tantos }: ZonasCategoria, cat: Categoria): ZoneStandings[] {
+export function zonasParaMostrar(
+  { zones, equipos, partidos, grupos, tarjetas, tantos }: ZonasCategoria,
+  cat: Categoria,
+  enVivo = false
+): ZoneStandings[] {
   if (grupos.length === 0) return zones;
   const asignados = new Set(zones.flatMap((z) => z.rows.map((r) => r.team.id)));
   const sinGrupo = equipos.filter((e) => !asignados.has(e.id)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -201,7 +205,7 @@ export function zonasParaMostrar({ zones, equipos, partidos, grupos, tarjetas, t
   const finalizadosEntreEllos = partidos.filter(
     (p) =>
       !p.ronda_eliminatoria &&
-      p.estado === "finalizado" &&
+      (p.estado === "finalizado" || (enVivo && estaEnVivo(p))) &&
       ids.has(p.equipo_local_id) &&
       !!p.equipo_visitante_id &&
       ids.has(p.equipo_visitante_id)
@@ -277,7 +281,55 @@ export interface DatosEstaticosCategoria {
  * fase eliminatoria se excluyen siempre: una vez que hay cruces generados,
  * esos resultados no deben sumar de nuevo en la tabla de grupos.
  */
-export async function computeZonesForCategoria(cat: Categoria, estaticos?: DatosEstaticosCategoria): Promise<ZonasCategoria> {
+/** Marcador actual de un partido de fútbol en juego, contado desde sus eventos (goles y goles en contra). */
+async function marcadoresEnVivo(partidos: PartidoRow[]): Promise<Map<string, { local: number; visitante: number }>> {
+  const map = new Map<string, { local: number; visitante: number }>();
+  if (!supabase || partidos.length === 0) return map;
+  const { data } = await supabase
+    .from("eventos_partido")
+    .select("partido_id, equipo_id, tipo")
+    .in(
+      "partido_id",
+      partidos.map((p) => p.id)
+    )
+    .eq("anulado", false)
+    .in("tipo", ["gol", "penal_convertido", "gol_en_contra"]);
+  const porId = new Map(partidos.map((p) => [p.id, p]));
+  for (const p of partidos) map.set(p.id, { local: 0, visitante: 0 });
+  for (const e of (data as { partido_id: string; equipo_id: string | null; tipo: string }[]) ?? []) {
+    const p = porId.get(e.partido_id);
+    const m = map.get(e.partido_id);
+    if (!p || !m || !e.equipo_id) continue;
+    const esLocal = e.equipo_id === p.equipo_local_id;
+    const esVisitante = e.equipo_id === p.equipo_visitante_id;
+    if (e.tipo === "gol_en_contra") {
+      if (esLocal) m.visitante++;
+      else if (esVisitante) m.local++;
+    } else if (esLocal) m.local++;
+    else if (esVisitante) m.visitante++;
+  }
+  return map;
+}
+
+export const ESTADOS_EN_VIVO = ["en_juego", "entretiempo"] as const;
+export function estaEnVivo(p: Pick<PartidoRow, "estado">): boolean {
+  return p.estado === "en_juego" || p.estado === "entretiempo";
+}
+
+export interface OpcionesZonas {
+  /**
+   * Vista pública: los partidos en juego suman en la tabla con el marcador del
+   * momento, como si ya hubieran terminado así. Los cruces reales (admin) nunca
+   * usan esto: se arman solo con partidos finalizados.
+   */
+  enVivo?: boolean;
+}
+
+export async function computeZonesForCategoria(
+  cat: Categoria,
+  estaticos?: DatosEstaticosCategoria,
+  opciones: OpcionesZonas = {}
+): Promise<ZonasCategoria> {
   if (!supabase) return { zones: [], equipos: [], partidos: [], grupos: [], tarjetas: new Map(), tantos: new Map() };
   const client = supabase;
 
@@ -290,8 +342,23 @@ export async function computeZonesForCategoria(cat: Categoria, estaticos?: Datos
       ? estaticos.grupos
       : client.from("grupos").select("*").eq("categoria_id", cat.id).then(({ data }) => (data as GrupoRow[]) ?? [])
   ]);
+  // En vivo (solo vista pública): el fútbol en juego toma el marcador de los
+  // eventos; el vóley ya va guardando los sets en el resultado.
+  const enJuego = opciones.enVivo ? partidos.filter((p) => !p.ronda_eliminatoria && p.equipo_visitante_id && estaEnVivo(p)) : [];
+  if (enJuego.length > 0) {
+    const marcadores = cat.deporte === "futbol" ? await marcadoresEnVivo(enJuego) : new Map<string, { local: number; visitante: number }>();
+    for (const p of enJuego) {
+      const m = marcadores.get(p.id);
+      if (m) {
+        p.resultado_local = m.local;
+        p.resultado_visitante = m.visitante;
+      }
+    }
+  }
+  const cuenta = (p: PartidoRow) => p.estado === "finalizado" || (opciones.enVivo === true && estaEnVivo(p));
+
   const partidosDeGrupo = partidos.filter((p) => !p.ronda_eliminatoria && p.equipo_visitante_id);
-  const finalizadosDeGrupo = partidosDeGrupo.filter((p) => p.estado === "finalizado");
+  const finalizadosDeGrupo = partidosDeGrupo.filter(cuenta);
   const idsFinalizados = finalizadosDeGrupo.map((p) => p.id);
   const [tarjetas, tantos] = await Promise.all([
     cardCountsFor(idsFinalizados),
@@ -326,7 +393,7 @@ export async function computeZonesForCategoria(cat: Categoria, estaticos?: Datos
           id: g.id,
           nombre: g.nombre,
           completa,
-          rows: computeStandings(equiposZona, partidosZona.filter((p) => p.estado === "finalizado"), cat, tarjetas, completa, tantos)
+          rows: computeStandings(equiposZona, partidosZona.filter(cuenta), cat, tarjetas, completa, tantos)
         };
       });
   } else {

@@ -3029,6 +3029,80 @@ table.data-table td {
   color: var(--color-text);
 }
 
+/* ---- en vivo y proyectado ---- */
+.bk-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-live, #e5484d) 8%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-live, #e5484d) 25%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+.bk-aviso .bk-live-dot {
+  margin-top: 4px;
+}
+.bk-live-dot {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-live, #e5484d);
+  animation: bk-pulse 1.4s ease-in-out infinite;
+}
+@keyframes bk-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bk-live-dot {
+    animation: none;
+  }
+}
+.bk-match.live {
+  box-shadow: var(--shadow-card), inset 0 0 0 1.5px color-mix(in srgb, var(--color-live, #e5484d) 60%, transparent);
+}
+.bk-match.live .bk-team:not(.win) {
+  color: var(--color-text-muted);
+}
+.bk-match.proj {
+  box-shadow: inset 0 0 0 1.5px var(--color-line);
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+}
+.bk-meta.live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-live, #e5484d);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+}
+.bk-seed {
+  flex: 0 0 auto;
+  min-width: 24px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.bk-team .bk-team-name {
+  flex: 1 1 auto;
+}
+.bk-seed + .bk-team-name span {
+  max-width: 82px;
+}
+.bk-champ.prov {
+  opacity: 0.85;
+}
+
 @media (max-width: 640px) {
   .bk {
     --bk-card-w: 156px;

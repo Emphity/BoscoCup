@@ -1,6 +1,9 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { BracketMatch, Team } from "@/types";
 import { Shield } from "@/components/icons";
+import { ID_LUGAR_VACIO } from "@/lib/bracket";
+
+const esLugarVacio = (t: Team) => t.id.startsWith(ID_LUGAR_VACIO);
 
 /**
  * Cuadro de playoffs espejado: la mitad izquierda avanza hacia la derecha, la
@@ -35,9 +38,26 @@ interface Props {
   renderExtra?: (m: BracketMatch) => ReactNode;
 }
 
-function Equipo({ team, score, pen, win, onTeam }: { team: Team | null; score: number | null; pen: number | null; win: boolean; onTeam?: (t: Team) => void }) {
+function Equipo({
+  team,
+  score,
+  pen,
+  win,
+  seed,
+  onTeam
+}: {
+  team: Team | null;
+  score: number | null;
+  pen: number | null;
+  win: boolean;
+  seed?: string;
+  onTeam?: (t: Team) => void;
+}) {
+  // Lugar de un grupo que todavía no tiene equipos asignados: se ve como "A definir".
+  if (team && esLugarVacio(team)) team = null;
   return (
     <div className={`bk-team ${win ? "win" : ""} ${team ? "" : "tbd"}`}>
+      {seed && <span className="bk-seed tnum">{seed}</span>}
       {team ? (
         <button
           type="button"
@@ -66,23 +86,37 @@ function Equipo({ team, score, pen, win, onTeam }: { team: Team | null; score: n
 
 function Tarjeta({ m, onTeam, renderExtra, destacada }: { m: BracketMatch; onTeam?: (t: Team) => void; renderExtra?: Props["renderExtra"]; destacada?: boolean }) {
   const penales = m.penalesHome !== null && m.penalesAway !== null;
-  const jugado = !m.pending;
+  const conMarcador = !m.pending || Boolean(m.enVivo);
+  const estado = m.enVivo ? "live" : m.pending ? "pending" : "done";
   return (
-    <div className={`bk-match ${m.pending ? "pending" : "done"} ${destacada ? "final" : ""}`}>
-      <Equipo team={m.home} score={jugado ? m.homeScore : null} pen={penales ? m.penalesHome : null} win={m.winnerId === m.home.id} onTeam={onTeam} />
+    <div className={`bk-match ${estado} ${m.proyectado ? "proj" : ""} ${destacada ? "final" : ""}`}>
+      <Equipo
+        team={m.home}
+        seed={m.seedHome}
+        score={conMarcador ? m.homeScore ?? 0 : null}
+        pen={penales ? m.penalesHome : null}
+        win={m.winnerId === m.home.id}
+        onTeam={onTeam}
+      />
       <Equipo
         team={m.away}
-        score={jugado ? m.awayScore : null}
+        seed={m.seedAway}
+        score={conMarcador ? m.awayScore ?? 0 : null}
         pen={penales ? m.penalesAway : null}
         win={Boolean(m.away && m.winnerId === m.away.id)}
         onTeam={onTeam}
       />
-      {m.pending && (
+      {m.enVivo ? (
+        <div className="bk-meta live">
+          <span className="bk-live-dot" aria-hidden="true" />
+          En vivo{m.court && ` · ${m.court}`}
+        </div>
+      ) : m.pending && !m.proyectado ? (
         <div className="bk-meta">
           {m.scheduledTime ?? "Horario a definir"}
           {m.court && ` · ${m.court}`}
         </div>
-      )}
+      ) : null}
       {renderExtra?.(m)}
     </div>
   );
@@ -101,7 +135,12 @@ export function BracketView({ matches, onTeam, renderExtra }: Props) {
     if (el) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
   }, [matches.length]);
 
-  if (matches.length === 0) return <p className="empty-note">El cuadro aparece cuando termina la fase de grupos.</p>;
+  if (matches.length === 0) return <p className="empty-note">El cuadro aparece cuando haya equipos cargados.</p>;
+
+  // Cruces que todavía no existen: se muestran según la tabla del momento.
+  const provisorio = matches.some((m) => m.proyectado || m.enVivo);
+  const soloProyeccion = matches.every((m) => m.proyectado);
+  const sinEquipos = matches.every((m) => esLugarVacio(m.home));
 
   // Tamaño del cuadro: la ronda más grande que haya.
   const primera = ORDEN.find((r) => matches.some((m) => m.round === r)) ?? "Final";
@@ -116,7 +155,9 @@ export function BracketView({ matches, onTeam, renderExtra }: Props) {
   const filas = Math.max(1, (PARTIDOS[primera] ?? 1) / 2);
   const final = porRonda.get("Final")?.get(0) ?? null;
   const tercero = porRonda.get("3er puesto")?.get(0) ?? null;
-  const campeon = final && !final.pending && final.winnerId ? (final.winnerId === final.home.id ? final.home : final.away) : null;
+  // Con la final en juego, el que va ganando aparece como campeón (provisorio).
+  const campeon =
+    final && (!final.pending || final.enVivo) && final.winnerId ? (final.winnerId === final.home.id ? final.home : final.away) : null;
   const subcampeon = campeon && final ? (campeon.id === final.home.id ? final.away : final.home) : null;
 
   const columna = (ronda: string, lado: 0 | 1, idx: number) => {
@@ -153,6 +194,17 @@ export function BracketView({ matches, onTeam, renderExtra }: Props) {
   };
 
   return (
+    <>
+    {provisorio && (
+      <p className="bk-aviso" role="status">
+        <span className="bk-live-dot" aria-hidden="true" />
+        {sinEquipos
+          ? "Cruces según la posición en cada grupo. Los equipos aparecen cuando arranca el primer partido y se actualizan en vivo."
+          : soloProyeccion
+          ? "Cuadro provisorio: así quedarían los cruces si la fase de grupos terminara ahora. Se actualiza con cada gol."
+          : "Provisorio: los partidos en juego cuentan con el marcador del momento."}
+      </p>
+    )}
     <div className="bk" ref={scroller}>
       <div className="bk-grid" style={{ "--filas": filas } as CSSProperties}>
         {laterales.map((r, i) => columna(r, 0, i))}
@@ -163,7 +215,7 @@ export function BracketView({ matches, onTeam, renderExtra }: Props) {
             <div className="bk-podio-top">
               <img className="bk-logo only-light" src="/logo-bosco-cup.png" alt="Bosco Cup" />
               <img className="bk-logo only-dark" src="/logo-bosco-cup-dark.png" alt="Bosco Cup" />
-              <div className={`bk-champ ${campeon ? "set" : ""}`}>
+              <div className={`bk-champ ${campeon ? "set" : ""} ${campeon && final?.enVivo ? "prov" : ""}`}>
                 <Trofeo className="bk-trophy" />
                 <span className="bk-champ-label">Campeón</span>
                 {campeon ? (
@@ -206,5 +258,6 @@ export function BracketView({ matches, onTeam, renderExtra }: Props) {
         {[...laterales].reverse().map((r, i) => columna(r, 1, laterales.length - 1 - i))}
       </div>
     </div>
+    </>
   );
 }

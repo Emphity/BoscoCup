@@ -68,6 +68,16 @@ export interface BracketMatch {
   pending: boolean;
   scheduledTime?: string;
   court?: string;
+  /** Partido en juego: muestra el marcador del momento y quién va ganando. */
+  enVivo?: boolean;
+  /**
+   * Cruce que todavía no existe: se arma con la tabla del momento (o con quien
+   * va ganando un partido en juego) y cambia con cada gol.
+   */
+  proyectado?: boolean;
+  /** Etiqueta de la siembra (1ºA, 2ºB…) en los cruces proyectados. */
+  seedHome?: string;
+  seedAway?: string;
 }
 
 export interface HistorialMatch {

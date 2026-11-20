@@ -75,13 +75,14 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetail | null
   if (!cat) return null;
 
   const [zonas, { data: jugadoresData }] = await Promise.all([
-    computeZonesForCategoria(cat),
+    // Igual que la tabla pública: los partidos en juego ya suman con el marcador del momento.
+    computeZonesForCategoria(cat, undefined, { enVivo: true }),
     supabase.from("jugadores").select("*").eq("equipo_id", teamId).order("nombre")
   ]);
   const jugadores = (jugadoresData as JugadorRow[]) ?? [];
   const { equipos, partidos, grupos } = zonas;
   // Mismas zonas que la tabla pública: un equipo sin grupo igual tiene su posición.
-  const zones = zonasParaMostrar(zonas, cat);
+  const zones = zonasParaMostrar(zonas, cat, true);
 
   const propios = partidos.filter(
     (p) => p.equipo_visitante_id && (p.equipo_local_id === teamId || p.equipo_visitante_id === teamId)

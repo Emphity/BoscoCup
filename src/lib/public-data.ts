@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import type { Categoria, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
-import { computeZonesForCategoria, teamFrom, zonasParaMostrar } from "@/lib/standings";
+import { computeZonesForCategoria, estaEnVivo, teamFrom, zonasParaMostrar } from "@/lib/standings";
+import { avanzarEnPantalla, cuadroSoloGrupos, proyectarCuadro } from "@/lib/bracket";
 import { getCanchas, getCategorias, getEquipos, getGrupoEquipos, getGrupos } from "@/lib/static-cache";
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
@@ -124,14 +125,35 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
     equipos: todosEquipos.filter((e) => e.categoria_id === cat.id),
     grupos: gruposCat,
     grupoEquipos: todosGrupoEquipos.filter((ge) => grupoIds.has(ge.grupo_id))
-  });
+  }, { enVivo: true });
   const { equipos, partidos, grupos } = zonas;
-  const zones = zonasParaMostrar(zonas, cat);
+  // La tabla pública es en vivo: un gol en un partido en juego ya mueve las posiciones.
+  const zones = zonasParaMostrar(zonas, cat, true);
+
+  // Marcador del momento de los partidos de playoff en juego (en fútbol sale
+  // de los eventos; en vóley el veedor ya guarda los sets en el resultado).
+  const playoffEnJuego = partidos.filter((p) => p.ronda_eliminatoria && p.equipo_visitante_id && estaEnVivo(p));
+  if (playoffEnJuego.length > 0 && cat.deporte === "futbol") {
+    const { data: ev } = await supabase
+      .from("eventos_partido")
+      .select("*")
+      .in(
+        "partido_id",
+        playoffEnJuego.map((p) => p.id)
+      )
+      .eq("anulado", false);
+    const eventos = (ev as EventoPartidoRow[]) ?? [];
+    for (const p of playoffEnJuego) {
+      const { home, away } = scoreDesde(p, eventos);
+      p.resultado_local = home;
+      p.resultado_visitante = away;
+    }
+  }
 
   // ---- cruces ----
   const canchaMap = new Map(canchas.map((c) => [c.id, c.nombre]));
   const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
-  const bracket: BracketMatch[] = partidos
+  const reales: BracketMatch[] = partidos
     .filter((p) => p.ronda_eliminatoria && equipoMap.has(p.equipo_local_id))
     .sort((a, b) => ROUND_ORDER.indexOf(a.ronda_eliminatoria as string) - ROUND_ORDER.indexOf(b.ronda_eliminatoria as string))
     .map((p) => {
@@ -141,7 +163,9 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
       const pv = p.penales_visitante;
       const definidoPorPenales = rl === rv && pl !== null && pv !== null && pl !== pv;
       let winnerId: string | null = null;
-      if (p.estado === "finalizado") {
+      const enVivo = estaEnVivo(p) && Boolean(p.equipo_visitante_id);
+      // En juego: el que va adelante "gana" en pantalla (y avanza), hasta el próximo gol.
+      if (p.estado === "finalizado" || enVivo) {
         if (rl !== rv) winnerId = rl > rv ? p.equipo_local_id : p.equipo_visitante_id;
         else if (definidoPorPenales) winnerId = (pl as number) > (pv as number) ? p.equipo_local_id : p.equipo_visitante_id;
       }
@@ -157,12 +181,29 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
         penalesAway: pv,
         winnerId,
         pending: p.estado !== "finalizado",
+        enVivo,
         scheduledTime: p.fecha_hora_programada
           ? new Date(p.fecha_hora_programada).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
           : undefined,
         court: p.cancha_id ? canchaMap.get(p.cancha_id) || undefined : undefined
       };
     });
+
+  // Sin cruces armados todavía, el cuadro se proyecta con la tabla del momento.
+  // Hasta que arranca el primer partido de grupos (o si los grupos todavía no
+  // tienen equipos) el cuadro queda "en blanco": solo los lugares (1ºA vs
+  // Mejor 3º…) con "A definir". Desde el primer partido en juego se llena con
+  // los equipos y se actualiza en vivo con cada gol.
+  const sinAsignar = grupos.length > 0 && zonas.zones.every((z) => z.rows.length === 0);
+  const arrancoFaseDeGrupos = partidos.some(
+    (p) => !p.ronda_eliminatoria && p.equipo_visitante_id && (p.estado === "finalizado" || estaEnVivo(p))
+  );
+  const enBlanco = sinAsignar || !arrancoFaseDeGrupos;
+  const tamanios = sinAsignar
+    ? grupos
+    : zonas.zones.filter((z) => z.rows.length > 0).map((z) => ({ nombre: z.nombre, cantidad: z.rows.length }));
+  const proyeccion = enBlanco ? cuadroSoloGrupos(grupos.length > 0 ? tamanios : [], equipos.length) : proyectarCuadro(zones);
+  const bracket = avanzarEnPantalla(reales.length > 0 ? reales : proyeccion);
 
   // ---- historial de resultados ----
   const grupoNombrePorId = new Map(grupos.map((g) => [g.id, g.nombre]));

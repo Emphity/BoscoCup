@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { categoriaLabel } from "@/lib/labels";
 import { computeZonesForCategoria, teamFrom, type ZonasCategoria } from "@/lib/standings";
-import { avanzarLlave, borrarLlave, estaDefinido, ganadorDe, generarLlave, MAX_EQUIPOS_LLAVE } from "@/lib/bracket";
+import {
+  avanzarLlave,
+  borrarLlave,
+  CLASIFICAN_CUARTOS,
+  EQUIPOS_CUADRO_PROYECTADO,
+  estaDefinido,
+  ganadorDe,
+  generarLlave,
+  MAX_EQUIPOS_LLAVE
+} from "@/lib/bracket";
 import { programarCruces } from "@/lib/programar-cruces";
 import { DIA_TORNEO } from "@/lib/reglas";
 import { BracketView } from "@/components/BracketView";
@@ -56,7 +65,8 @@ export function AdminCruces() {
 
   useEffect(() => {
     if (!categoria) return;
-    setEntran(categoria.cantidad_clasifican_por_grupo >= 99 ? "todos" : String(categoria.cantidad_clasifican_por_grupo));
+    const c = categoria.cantidad_clasifican_por_grupo;
+    setEntran(c === CLASIFICAN_CUARTOS ? "cuartos" : c >= 99 ? "todos" : String(c));
     setEdicion(null);
     setMensaje(null);
     // Al entrar, el cuadro se pone al día solo con los partidos ya terminados.
@@ -97,7 +107,8 @@ export function AdminCruces() {
     cargar(categoria);
   }
 
-  const onArmar = () => correr(() => generarLlave(categoriaId, entran === "todos" ? null : Number(entran)));
+  const onArmar = () =>
+    correr(() => generarLlave(categoriaId, entran === "todos" ? null : entran === "cuartos" ? "cuartos" : Number(entran)));
   const onActualizar = () => correr(() => avanzarLlave(categoriaId));
   const onBorrar = () => {
     if (!window.confirm("¿Borrar el cuadro de playoffs de esta categoría? Se puede volver a armar desde la tabla.")) return;
@@ -194,7 +205,12 @@ export function AdminCruces() {
   const tamanioZona = Math.max(0, ...(zonas?.zones.map((z) => z.rows.length) ?? [0]));
   const totalEquipos = zonas?.zones.reduce((acc, z) => acc + z.rows.length, 0) ?? 0;
   const entranTotal =
-    entran === "todos" ? totalEquipos : (zonas?.zones ?? []).reduce((acc, z) => acc + Math.min(z.rows.length, Number(entran)), 0);
+    entran === "todos"
+      ? totalEquipos
+      : entran === "cuartos"
+        ? Math.min(totalEquipos, EQUIPOS_CUADRO_PROYECTADO)
+        : (zonas?.zones ?? []).reduce((acc, z) => acc + Math.min(z.rows.length, Number(entran)), 0);
+  const cantGrupos = zonas?.zones.length ?? 0;
 
   return (
     <div>
@@ -267,6 +283,15 @@ export function AdminCruces() {
               <span>Entran a playoffs</span>
               <select className="input" value={entran} onChange={(e) => setEntran(e.target.value)}>
                 <option value="todos">Todos los equipos</option>
+                {totalEquipos > EQUIPOS_CUADRO_PROYECTADO && (
+                  <option value="cuartos">
+                    {cantGrupos === 3
+                      ? "Cuartos: 1º y 2º de cada grupo + 2 mejores 3º"
+                      : cantGrupos === 2
+                        ? "Cuartos: los 4 primeros de cada grupo"
+                        : "Cuartos: los 8 mejores"}
+                  </option>
+                )}
                 {Array.from({ length: Math.max(0, tamanioZona - 1) }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>
                     Los primeros {n} {(zonas.zones.length ?? 0) > 1 ? "de cada grupo" : ""}

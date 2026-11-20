@@ -145,14 +145,10 @@ export function PublicHome() {
       programar(publico, vivo);
     }
 
-    function onEvento(payload: { new: unknown; old: unknown }) {
-      const { nueva, vieja } = filaDe(payload);
-      const partidoId = (nueva?.partido_id ?? vieja?.partido_id) as string | undefined;
-      // Un gol o una tarjeta de un partido en juego solo cambia el carrusel: la
-      // tabla se calcula con partidos finalizados. Si el evento es de otro
-      // partido (una corrección posterior), se refresca todo.
-      if (partidoId && idsEnVivo.has(partidoId)) programar(false, true);
-      else programar(true, true);
+    function onEvento() {
+      // La tabla y el cuadro son en vivo: un gol o una tarjeta en un partido en
+      // juego ya mueve las posiciones, así que siempre se refresca todo.
+      programar(true, true);
     }
 
     function onEstatica(tabla: TablaEstatica) {
@@ -289,6 +285,7 @@ export function PublicHome() {
                   <span className="legend-q" /> Clasifica a cruces ·{" "}
                 </>
               )}
+              {liveMatches.length > 0 && "Los partidos en juego ya suman con el marcador del momento · "}
               Tocá un equipo para ver su ficha
             </p>
           </section>

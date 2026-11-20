@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import { categoriaLabel } from "@/lib/labels";
-import { AMARILLAS_PARA_SUSPENSION, PLANTEL_FUTBOL } from "@/lib/reglas";
+import { AMARILLAS_PARA_SUSPENSION, plantelFutbol } from "@/lib/reglas";
 import { fetchTarjetasEquipo, type EstadoTarjetas } from "@/lib/suspensiones";
 import type { Categoria, EquipoRow, JugadorRow } from "@/lib/db-types";
 
@@ -21,6 +21,9 @@ export function AdminJugadores() {
 
   const categoria = categorias.find((c) => c.id === categoriaId);
   const esFutbol = categoria?.deporte === "futbol";
+  // Femenino es fútbol 6 (mínimo 6 jugadoras); masculino, fútbol 7.
+  const PLANTEL_FUTBOL = plantelFutbol(categoria?.rama);
+  const palabra = categoria?.rama === "Femenino" ? "jugadoras" : "jugadores";
   const lleno = esFutbol && jugadores.length >= PLANTEL_FUTBOL.maximo;
 
   useEffect(() => {
@@ -68,7 +71,7 @@ export function AdminJugadores() {
     setError(null);
     if (!supabase) return setError("Supabase no está configurado.");
     if (!equipoId) return setError("Elegí un equipo primero.");
-    if (lleno) return setError(`El equipo ya tiene ${PLANTEL_FUTBOL.maximo} jugadores (máximo del reglamento).`);
+    if (lleno) return setError(`El equipo ya tiene ${PLANTEL_FUTBOL.maximo} ${palabra} (máximo del reglamento).`);
     const limpio = limpiarNombre(nombre);
     if (!limpio) return setError("Escribí el nombre y apellido.");
     const { error: err } = await supabase.from("jugadores").insert({ equipo_id: equipoId, nombre: limpio });
@@ -162,7 +165,7 @@ export function AdminJugadores() {
         <div className="plantel-status">
           <span className={`plantel-count ${esFutbol && (jugadores.length < PLANTEL_FUTBOL.minimo || lleno) ? "warn" : ""}`}>
             {jugadores.length}
-            {esFutbol ? ` / ${PLANTEL_FUTBOL.maximo}` : ""} jugadores
+            {esFutbol ? ` / ${PLANTEL_FUTBOL.maximo}` : ""} {esFutbol ? palabra : "jugadores"}
           </span>
           {esFutbol && jugadores.length < PLANTEL_FUTBOL.minimo && (
             <span>

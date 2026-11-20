@@ -36,8 +36,17 @@ export function minutosDeTurno(ronda: string | null | undefined): number {
   return minutosPorTiempo(ronda) * 2 + FUTBOL.minutosDescanso;
 }
 
-/** Plantel: mínimo 7 y máximo 10 jugadores por equipo (fútbol). */
+/**
+ * Plantel de fútbol: máximo 10 jugadores por equipo. El mínimo depende de la
+ * rama: masculino es fútbol 7 (mínimo 7) y femenino es fútbol 6 — 5 jugadoras
+ * más la arquera (mínimo 6).
+ */
 export const PLANTEL_FUTBOL = { minimo: 7, maximo: 10 } as const;
+export const PLANTEL_FUTBOL_FEMENINO = { minimo: 6, maximo: 10 } as const;
+
+export function plantelFutbol(rama: string | null | undefined): { minimo: number; maximo: number } {
+  return rama === "Femenino" ? PLANTEL_FUTBOL_FEMENINO : PLANTEL_FUTBOL;
+}
 
 /**
  * Tarjetas acumulativas. El reglamento no fija el número: acá se define.
