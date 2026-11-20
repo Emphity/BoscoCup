@@ -109,7 +109,8 @@ function Tarjeta({ m, onTeam, renderExtra, destacada }: { m: BracketMatch; onTea
       {m.enVivo ? (
         <div className="bk-meta live">
           <span className="bk-live-dot" aria-hidden="true" />
-          En vivo{m.court && ` · ${m.court}`}
+          {penales ? "Penales en vivo" : "En vivo"}
+          {m.court && ` · ${m.court}`}
         </div>
       ) : m.pending && !m.proyectado ? (
         <div className="bk-meta">

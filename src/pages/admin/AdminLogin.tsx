@@ -19,7 +19,7 @@ export function AdminLogin() {
     setSubmitting(true);
     try {
       await signInAdmin(email, password);
-      navigate("/admin");
+      navigate("/admin", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión.");
     } finally {

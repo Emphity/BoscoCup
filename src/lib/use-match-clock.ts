@@ -57,12 +57,18 @@ export function useMatchClock(partidoId: string, minutosPorTiempo: number) {
     persist({ ...state, startedAt: null, baseMs: state.baseMs + elapsed });
   }
 
-  const elapsedMs = state.baseMs + (state.startedAt ? Date.now() - state.startedAt : 0);
+  /** Vuelve a correr el reloj donde quedó (si se terminó el tiempo por error). */
+  function reanudar() {
+    if (state.startedAt) return;
+    persist({ ...state, startedAt: Date.now() });
+  }
+
+  const elapsedMs =state.baseMs + (state.startedAt ? Date.now() - state.startedAt : 0);
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const minuto = Math.floor(totalSeconds / 60);
   const seg = totalSeconds % 60;
   const label = `${minuto}:${seg.toString().padStart(2, "0")}`;
   const running = state.startedAt !== null;
 
-  return { periodo: state.periodo, minuto, label, running, iniciar1T, entretiempo, iniciar2T, detener };
+  return { periodo: state.periodo, minuto, label, running, iniciar1T, entretiempo, iniciar2T, detener, reanudar };
 }

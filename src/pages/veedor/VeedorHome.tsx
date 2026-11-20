@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useBaseDeHistorial } from "@/lib/historial";
 import type { PartidoRow } from "@/lib/db-types";
 
 interface PartidoAsignado extends PartidoRow {
@@ -13,6 +14,7 @@ interface PartidoAsignado extends PartidoRow {
 export function VeedorHome() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
+  useBaseDeHistorial(["/"]);
   const [partidos, setPartidos] = useState<PartidoAsignado[] | null>(null);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function VeedorHome() {
 
   async function onSignOut() {
     await signOut();
-    navigate("/veedor/login");
+    navigate("/veedor/login", { replace: true });
   }
 
   return (

@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useBaseDeHistorial } from "@/lib/historial";
 
 const NAV = [
   { to: "/admin", label: "Resumen", end: true },
@@ -14,10 +15,12 @@ const NAV = [
 export function AdminLayout() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
+  // Entrando directo al panel, "atrás" vuelve al resumen y a los resultados.
+  useBaseDeHistorial(["/", "/admin"]);
 
   async function onSignOut() {
     await signOut();
-    navigate("/admin/login");
+    navigate("/", { replace: true });
   }
 
   return (

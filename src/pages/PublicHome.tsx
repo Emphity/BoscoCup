@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useCapa } from "@/lib/historial";
 import type { Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import { getMockAllLiveMatches, getMockData } from "@/lib/mock-data";
 import { fetchAllLiveMatches, fetchPublicData, type PublicData } from "@/lib/public-data";
@@ -50,15 +51,33 @@ function temaInicial(): "light" | "dark" | null {
 }
 
 export function PublicHome() {
-  const [sport, setSport] = useState<Sport>("futbol");
-  const [branch, setBranch] = useState<Branch>("masculino");
+  // Deporte, rama y pestaña viven en la URL (?deporte=voley&seccion=cruces):
+  // cada cambio es una entrada del historial, así "atrás" vuelve a la vista
+  // anterior en vez de salir de la página.
+  const [params, setParams] = useSearchParams();
+  const sport: Sport = params.get("deporte") === "voley" ? "voley" : "futbol";
+  const branch: Branch = params.get("rama") === "femenino" ? "femenino" : "masculino";
+  const pestana: Pestana = PESTANAS.find((p) => p.id === params.get("seccion"))?.id ?? "inicio";
+  function cambiarVista(cambios: { deporte?: Sport; rama?: Branch; seccion?: Pestana }) {
+    const next = new URLSearchParams(params);
+    const poner = (clave: string, valor: string | undefined, porDefecto: string) => {
+      if (valor === undefined) return;
+      if (valor === porDefecto) next.delete(clave);
+      else next.set(clave, valor);
+    };
+    poner("deporte", cambios.deporte, "futbol");
+    poner("rama", cambios.rama, "masculino");
+    poner("seccion", cambios.seccion, "inicio");
+    if (next.toString() !== params.toString()) setParams(next);
+  }
+  const setSport = (deporte: Sport) => cambiarVista({ deporte });
+  const setBranch = (rama: Branch) => cambiarVista({ rama });
   const [theme, setTheme] = useState<"light" | "dark" | null>(temaInicial);
   const [data, setData] = useState<PublicData>(EMPTY);
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
-  const [pestana, setPestana] = useState<Pestana>("inicio");
   const [equipo, setEquipo] = useState<TeamRef | null>(null);
-
-  const [accesoAbierto, setAccesoAbierto] = useState(false);
+  const capaEquipo = useCapa("equipo");
+  const capaAcceso = useCapa("acceso");
 
   // Solo fútbol tiene ramas; vóley se juega mixto.
   const hasBranches = sport === "futbol";
@@ -194,12 +213,16 @@ export function PublicHome() {
   }
 
   function irA(destino: Pestana) {
-    setPestana(destino);
+    cambiarVista({ seccion: destino });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const abrirEquipo = (team: Team) => setEquipo({ team, sport, branch: ramaActual });
-  const abrirDesdeVivo = (team: Team, m: LiveMatch) => setEquipo({ team, sport: m.sport, branch: m.branch });
+  function mostrarEquipo(ref: TeamRef) {
+    setEquipo(ref);
+    capaEquipo.abrir();
+  }
+  const abrirEquipo = (team: Team) => mostrarEquipo({ team, sport, branch: ramaActual });
+  const abrirDesdeVivo = (team: Team, m: LiveMatch) => mostrarEquipo({ team, sport: m.sport, branch: m.branch });
   const tabIndex = PESTANAS.findIndex((p) => p.id === pestana);
   const sportColor = `var(--color-${sport})`;
 
@@ -223,7 +246,7 @@ export function PublicHome() {
             <IconMoon className="only-light" />
             <IconSun className="only-dark" />
           </button>
-          <BotonAcceso onClick={() => setAccesoAbierto(true)} />
+          <BotonAcceso onClick={capaAcceso.abrir} />
         </div>
       </header>
       <div className="brand-rule" aria-hidden="true" />
@@ -316,8 +339,15 @@ export function PublicHome() {
         ))}
       </nav>
 
-      <TeamSheet target={equipo} onClose={() => setEquipo(null)} />
-      {accesoAbierto && <HojaAcceso onClose={() => setAccesoAbierto(false)} />}
+      {/* Con "atrás" la capa se cierra sola (deja de estar abierta en el historial). */}
+      <TeamSheet
+        target={capaEquipo.abierta ? equipo : null}
+        onClose={() => {
+          setEquipo(null);
+          capaEquipo.cerrar();
+        }}
+      />
+      {capaAcceso.abierta && <HojaAcceso onClose={capaAcceso.cerrar} />}
     </div>
   );
 }
@@ -365,7 +395,7 @@ function HojaAcceso({ onClose }: { onClose: () => void }) {
             <div className="sheet-title" id="acceso-titulo">
               Acceso del staff
             </div>
-            <Link className="access-option" to="/veedor/login">
+            <Link className="access-option" to="/veedor/login" replace>
               <span className="access-ico">
                 <IconWhistle />
               </span>
@@ -378,7 +408,7 @@ function HojaAcceso({ onClose }: { onClose: () => void }) {
               </span>
             </Link>
 
-            <Link className="access-option org" to="/admin/login">
+            <Link className="access-option org" to="/admin/login" replace>
               <span className="access-ico">
                 <IconClipboard />
               </span>

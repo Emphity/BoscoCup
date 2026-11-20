@@ -4,8 +4,11 @@ import { supabase } from "@/lib/supabase";
 import type { DeporteDb, EquipoRow, JugadorRow, PartidoRow } from "@/lib/db-types";
 import { PartidoEnVivo } from "@/pages/veedor/PartidoEnVivo";
 import { PartidoVoley } from "@/pages/veedor/PartidoVoley";
+import { useBaseDeHistorial } from "@/lib/historial";
 
 export function PartidoRoute() {
+  // Entrando directo a un partido, "atrás" vuelve a la lista de partidos.
+  useBaseDeHistorial(["/", "/veedor"]);
   const { id } = useParams<{ id: string }>();
 
   const [partido, setPartido] = useState<PartidoRow | null>(null);

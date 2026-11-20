@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { EquipoRow, PartidoEstado } from "@/lib/db-types";
 import { VOLEY, setTerminado } from "@/lib/reglas";
+import { useCapa } from "@/lib/historial";
 
 interface Props {
   partidoId: string;
@@ -41,6 +42,22 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
   const [error, setError] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<{ mensaje: string; accion: () => void } | null>(null);
   const guardado = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // La confirmación tiene su entrada en el historial: "atrás" la cierra.
+  const capaConfirmar = useCapa("confirmar");
+  function pedirConfirmacion(c: { mensaje: string; accion: () => void }) {
+    setConfirmar(c);
+    capaConfirmar.abrir();
+  }
+  function cerrarConfirmacion() {
+    setConfirmar(null);
+    capaConfirmar.cerrar();
+  }
+
+  /** Vuelve a la lista de partidos sacando este de la pila de "atrás". */
+  function volverAlPanel() {
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+    else navigate("/veedor", { replace: true });
+  }
 
   useEffect(() => {
     if (!supabase) return;
@@ -115,7 +132,7 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
     if (termina) {
       // Ganó 2 sets: el partido termina acá.
       await cambiarEstado("finalizado", { resultado_local: nl, resultado_visitante: nv });
-      navigate("/veedor");
+      volverAlPanel();
       return;
     }
     if (supabase) {
@@ -132,7 +149,7 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
 
   async function finalizar() {
     await cambiarEstado("finalizado", { resultado_local: setsLocal, resultado_visitante: setsVisitante });
-    navigate("/veedor");
+    volverAlPanel();
   }
 
   return (
@@ -170,7 +187,7 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
               onClick={() => {
                 const ganaPartido =
                   (actual.local > actual.visitante ? setsLocal : setsVisitante) + 1 >= VOLEY.setsParaGanar;
-                setConfirmar({
+                pedirConfirmacion({
                   mensaje: `¿Cerrar el set ${actual.numero} ${actual.local}-${actual.visitante}?${
                     ganaPartido ? " Con este set se termina el partido." : ""
                   }`,
@@ -184,7 +201,7 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
           {estado === "en_juego" && definido && (
             <button
               className="btn btn-danger btn-sm"
-              onClick={() => setConfirmar({ mensaje: `¿Finalizar el partido ${setsLocal}-${setsVisitante} en sets?`, accion: finalizar })}
+              onClick={() => pedirConfirmacion({ mensaje: `¿Finalizar el partido ${setsLocal}-${setsVisitante} en sets?`, accion: finalizar })}
             >
               Finalizar partido
             </button>
@@ -235,8 +252,8 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
         </div>
       )}
 
-      {confirmar && (
-        <div className="sheet-overlay" onClick={() => setConfirmar(null)}>
+      {confirmar && capaConfirmar.abierta && (
+        <div className="sheet-overlay" onClick={cerrarConfirmacion}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-title">Confirmar</div>
             <p className="form-hint" style={{ margin: "0 0 14px" }}>
@@ -246,13 +263,14 @@ export function PartidoVoley({ partidoId, equipoLocal, equipoVisitante, estadoIn
               <button
                 className="btn btn-primary"
                 onClick={() => {
-                  confirmar.accion();
-                  setConfirmar(null);
+                  const { accion } = confirmar;
+                  cerrarConfirmacion();
+                  accion();
                 }}
               >
                 Confirmar
               </button>
-              <button className="btn btn-ghost" onClick={() => setConfirmar(null)}>
+              <button className="btn btn-ghost" onClick={cerrarConfirmacion}>
                 Cancelar
               </button>
             </div>

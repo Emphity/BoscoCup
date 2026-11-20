@@ -20,7 +20,9 @@ export const FUTBOL = {
   /** La final es la única ronda con tiempos más largos. */
   minutosPorTiempoFinal: 20,
   minutosDescanso: 5,
-  maxCambios: 3
+  maxCambios: 3,
+  /** Tiros por equipo en la tanda de penales; si siguen iguales, muerte súbita. */
+  penalesPorEquipo: 5
 } as const;
 
 /** Minutos que ocupa un partido en la cancha. */

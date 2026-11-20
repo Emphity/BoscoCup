@@ -8,6 +8,30 @@ import type { EquipoRow, EventoPartidoRow, EventoTipo, JugadorRow, PartidoEstado
 import { IconCard, IconGol, IconGoalOwn, IconIncidencia, IconSync, IconUndo } from "@/components/icons";
 import { FUTBOL, minutosPorTiempo } from "@/lib/reglas";
 import { fetchTarjetasEquipo, type Suspension } from "@/lib/suspensiones";
+import { estadoTanda, tirosDesdeEventos } from "@/lib/tanda-penales";
+import { useCapa } from "@/lib/historial";
+
+/** En qué parte del partido está el veedor (en la base sigue "en_juego"). */
+type Fase = "juego" | "fin2T" | "penales";
+
+const faseKey = (partidoId: string) => `boscocup-fase-${partidoId}`;
+function leerFase(partidoId: string): Fase {
+  try {
+    const f = localStorage.getItem(faseKey(partidoId));
+    if (f === "fin2T" || f === "penales") return f;
+  } catch {
+    // sin almacenamiento: arranca en juego
+  }
+  return "juego";
+}
+function guardarFase(partidoId: string, fase: Fase) {
+  try {
+    if (fase === "juego") localStorage.removeItem(faseKey(partidoId));
+    else localStorage.setItem(faseKey(partidoId), fase);
+  } catch {
+    // ignore
+  }
+}
 
 interface Props {
   partidoId: string;
@@ -51,7 +75,9 @@ const TIPO_TEXTO: Partial<Record<EventoTipo, string>> = {
   tarjeta_roja: "Roja",
   doble_amarilla: "Doble amarilla (roja)",
   cambio: "Cambio (entra)",
-  incidencia: "Incidencia"
+  incidencia: "Incidencia",
+  tanda_convertido: "Penal convertido (tanda)",
+  tanda_errado: "Penal errado (tanda)"
 };
 
 export function PartidoEnVivo({
@@ -68,15 +94,29 @@ export function PartidoEnVivo({
   const minutos = minutosPorTiempo(ronda);
   const clock = useMatchClock(partidoId, minutos);
   const sync = useSyncStatus();
+  // Hojas con entrada en el historial: "atrás" las cierra sin salir del partido.
+  const capaEvento = useCapa("evento");
+  const capaConfirmar = useCapa("confirmar");
+
+  /** Vuelve a la lista de partidos sacando este de la pila de "atrás". */
+  function volverAlPanel() {
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+    else navigate("/veedor", { replace: true });
+  }
 
   const [estado, setEstado] = useState<PartidoEstado>(estadoInicial);
   const [eventos, setEventos] = useState<EventoPartidoRow[]>([]);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [texto, setTexto] = useState("");
   const [confirmState, setConfirmState] = useState<{ mensaje: string; accion: () => void } | null>(null);
-  const [penalesAbierto, setPenalesAbierto] = useState(false);
-  const [penalesLocal, setPenalesLocal] = useState(0);
-  const [penalesVisitante, setPenalesVisitante] = useState(0);
+  const [fase, setFaseState] = useState<Fase>(() => leerFase(partidoId));
+  // Quién patea primero en la tanda (antes del primer tiro lo elige el veedor).
+  const [primeroElegido, setPrimeroElegido] = useState<string | null>(null);
+
+  function setFase(f: Fase) {
+    setFaseState(f);
+    guardarFase(partidoId, f);
+  }
 
   useEffect(() => {
     if (!supabase) return;
@@ -85,7 +125,13 @@ export function PartidoEnVivo({
       .select("*")
       .eq("partido_id", partidoId)
       .order("creado_en", { ascending: true })
-      .then(({ data }) => setEventos((data as EventoPartidoRow[]) ?? []));
+      .then(({ data }) => {
+        const lista = (data as EventoPartidoRow[]) ?? [];
+        setEventos(lista);
+        // Si ya hay tiros cargados (otro dispositivo, recarga), se retoma la tanda.
+        if (tirosDesdeEventos(lista).length > 0) setFase("penales");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partidoId]);
 
   const [otroDispositivo, setOtroDispositivo] = useState(false);
@@ -174,9 +220,19 @@ export function PartidoEnVivo({
   function openSheet(tipo: EventoTipo) {
     setTexto("");
     setSheet({ tipo, step: "equipo" });
+    capaEvento.abrir();
   }
   function closeSheet() {
     setSheet(null);
+    capaEvento.cerrar();
+  }
+  function pedirConfirmacion(c: { mensaje: string; accion: () => void }) {
+    setConfirmState(c);
+    capaConfirmar.abrir();
+  }
+  function cerrarConfirmacion() {
+    setConfirmState(null);
+    capaConfirmar.cerrar();
   }
 
   async function confirmarEvento(payload: { equipoId: string | null; jugadorId: string | null; texto?: string }) {
@@ -223,20 +279,103 @@ export function PartidoEnVivo({
   function deshacer() {
     const ultimo = [...eventos].filter((e) => !e.anulado).at(-1);
     if (!ultimo) return;
-    setConfirmState({
+    pedirConfirmacion({
       mensaje: `¿Deshacer "${TIPO_TEXTO[ultimo.tipo] ?? ultimo.tipo.replace(/_/g, " ")}"?`,
       accion: () => aplicarDeshacer(ultimo)
     });
   }
 
   async function aplicarDeshacer(ultimo: EventoPartidoRow) {
-    setEventos((prev) => prev.map((e) => (e.id === ultimo.id ? { ...e, anulado: true } : e)));
+    const siguientes = eventos.map((e) => (e.id === ultimo.id ? { ...e, anulado: true } : e));
+    setEventos(siguientes);
 
     if (isQueued(ultimo.id)) {
       cancelQueuedInsert(ultimo.id);
     } else {
       await updateWithFallback("eventos_partido", ultimo.id, { anulado: true });
     }
+    if (ultimo.tipo === "tanda_convertido" || ultimo.tipo === "tanda_errado") await guardarPenales(siguientes);
+    sync.refresh();
+  }
+
+  // ---- tanda de penales ----
+  const tiros = useMemo(() => tirosDesdeEventos(eventos), [eventos]);
+  const primero = tiros[0]?.equipoId ?? primeroElegido;
+  const segundo = primero === equipoLocal.id ? equipoVisitante.id : equipoLocal.id;
+  const tanda = primero ? estadoTanda(tiros, primero, segundo, FUTBOL.penalesPorEquipo) : null;
+  const golesTanda = (equipoId: string) => tiros.filter((t) => t.equipoId === equipoId && t.convertido).length;
+  const penLocal = golesTanda(equipoLocal.id);
+  const penVisitante = golesTanda(equipoVisitante.id);
+  const nombreDe = (id: string | null) => (id === equipoLocal.id ? equipoLocal.nombre : id === equipoVisitante.id ? equipoVisitante.nombre : "");
+
+  /** Deja el resultado parcial de la tanda en el partido, para que el público lo vea en vivo. */
+  async function guardarPenales(lista: EventoPartidoRow[]) {
+    const t = tirosDesdeEventos(lista);
+    const de = (id: string) => t.filter((x) => x.equipoId === id && x.convertido).length;
+    await updateWithFallback("partidos", partidoId, {
+      penales_local: de(equipoLocal.id),
+      penales_visitante: de(equipoVisitante.id)
+    });
+  }
+
+  function finalizarSegundoTiempo() {
+    if (!empatadoEnEliminatoria) {
+      finalizarPartido();
+      return;
+    }
+    pedirConfirmacion({
+      mensaje: `¿Terminó el 2do tiempo ${score.local}-${score.visitante}? Al estar empatados se define por penales.`,
+      accion: () => {
+        clock.detener();
+        setFase("fin2T");
+      }
+    });
+  }
+
+  function reanudarSegundoTiempo() {
+    clock.reanudar();
+    setFase("juego");
+  }
+
+  async function iniciarPenales() {
+    setPrimeroElegido(null);
+    setFase("penales");
+    // 0-0 en la tanda: el público ya ve que se patean penales.
+    await updateWithFallback("partidos", partidoId, { penales_local: 0, penales_visitante: 0 });
+    sync.refresh();
+  }
+
+  async function patearPenal(convertido: boolean) {
+    if (!tanda?.turno) return;
+    const equipoId = tanda.turno;
+    const id = crypto.randomUUID();
+    const tipo: EventoTipo = convertido ? "tanda_convertido" : "tanda_errado";
+    const detalle = { ronda: tanda.ronda };
+    const row: EventoPartidoRow = {
+      id,
+      partido_id: partidoId,
+      tipo,
+      equipo_id: equipoId,
+      jugador_id: null,
+      jugador_asistencia_id: null,
+      minuto: clock.minuto,
+      detalle,
+      anulado: false,
+      creado_en: new Date().toISOString()
+    };
+    const siguientes = [...eventos, row];
+    setEventos(siguientes);
+    await insertWithFallback("eventos_partido", {
+      id,
+      partido_id: partidoId,
+      tipo,
+      equipo_id: equipoId,
+      jugador_id: null,
+      jugador_asistencia_id: null,
+      minuto: clock.minuto,
+      detalle
+    });
+    await guardarPenales(siguientes);
     sync.refresh();
   }
 
@@ -247,7 +386,7 @@ export function PartidoEnVivo({
   }
 
   function finalizarPartido() {
-    setConfirmState({
+    pedirConfirmacion({
       mensaje: `¿Finalizar el partido ${score.local}-${score.visitante}? No se va a poder seguir cargando eventos.`,
       accion: aplicarFinalizar
     });
@@ -256,21 +395,30 @@ export function PartidoEnVivo({
   async function aplicarFinalizar() {
     clock.detener();
     setEstado("finalizado");
+    setFase("juego");
     if (!supabase) return;
     await supabase
       .from("partidos")
-      .update({ estado: "finalizado", resultado_local: score.local, resultado_visitante: score.visitante })
+      // Sin penales: se limpia por si se había empezado una tanda.
+      .update({ estado: "finalizado", resultado_local: score.local, resultado_visitante: score.visitante, penales_local: null, penales_visitante: null })
       .eq("id", partidoId);
-    navigate("/veedor");
+    volverAlPanel();
   }
 
   const empatadoEnEliminatoria = esEliminatoria && score.local === score.visitante;
 
-  async function confirmarPenales() {
-    if (penalesLocal === penalesVisitante) return;
+  function finalizarPorPenales() {
+    if (!tanda?.ganador) return;
+    pedirConfirmacion({
+      mensaje: `¿Finalizar ${score.local}-${score.visitante} (penales ${penLocal}-${penVisitante})? Gana ${nombreDe(tanda.ganador)}.`,
+      accion: aplicarFinalizarPenales
+    });
+  }
+
+  async function aplicarFinalizarPenales() {
     clock.detener();
     setEstado("finalizado");
-    setPenalesAbierto(false);
+    setFase("juego");
     if (!supabase) return;
     await supabase
       .from("partidos")
@@ -278,11 +426,11 @@ export function PartidoEnVivo({
         estado: "finalizado",
         resultado_local: score.local,
         resultado_visitante: score.visitante,
-        penales_local: penalesLocal,
-        penales_visitante: penalesVisitante
+        penales_local: penLocal,
+        penales_visitante: penVisitante
       })
       .eq("id", partidoId);
-    navigate("/veedor");
+    volverAlPanel();
   }
 
   const equipoSel = sheet?.equipoId === equipoLocal.id ? equipoLocal : sheet?.equipoId === equipoVisitante.id ? equipoVisitante : null;
@@ -316,6 +464,11 @@ export function PartidoEnVivo({
             {score.local}
             <span>—</span>
             {score.visitante}
+            {fase === "penales" && (
+              <small className="v-score-pen">
+                Penales {penLocal}-{penVisitante}
+              </small>
+            )}
           </div>
           <div className="v-team">
             <span className="color-dot" style={{ background: equipoVisitante.color_primario }} />
@@ -325,7 +478,9 @@ export function PartidoEnVivo({
 
         <div className="v-clock-row">
           <span className="v-clock tnum">{clock.label}</span>
-          <span className="badge-estado">{estado.replace("_", " ")}</span>
+          <span className="badge-estado">
+            {estado === "en_juego" && fase === "penales" ? "penales" : estado === "en_juego" && fase === "fin2T" ? "fin del 2do tiempo" : estado.replace("_", " ")}
+          </span>
         </div>
         <p className="form-hint" style={{ textAlign: "center", margin: "2px 0 8px" }}>
           {ronda === "Final" ? "Final: " : ""}2 tiempos de {minutos}' · descanso {FUTBOL.minutosDescanso}'
@@ -348,27 +503,116 @@ export function PartidoEnVivo({
               Iniciar 2do tiempo
             </button>
           )}
-          {estado === "en_juego" && empatadoEnEliminatoria && (
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => {
-                setPenalesLocal(0);
-                setPenalesVisitante(0);
-                setPenalesAbierto(true);
-              }}
-            >
-              Cargar penales
+          {estado === "en_juego" && fase === "juego" && clock.periodo === "2T" && (
+            <button className="btn btn-danger btn-sm" onClick={finalizarSegundoTiempo}>
+              Finalizar 2do tiempo
             </button>
           )}
-          {estado === "en_juego" && !empatadoEnEliminatoria && (
-            <button className="btn btn-danger btn-sm" onClick={finalizarPartido}>Finalizar partido</button>
+          {estado === "en_juego" && fase === "fin2T" && empatadoEnEliminatoria && (
+            <button className="btn btn-primary btn-sm" onClick={iniciarPenales}>
+              Iniciar penales
+            </button>
+          )}
+          {estado === "en_juego" && fase === "fin2T" && !empatadoEnEliminatoria && (
+            <button className="btn btn-danger btn-sm" onClick={finalizarPartido}>
+              Finalizar partido
+            </button>
+          )}
+          {estado === "en_juego" && fase === "fin2T" && (
+            <button className="btn btn-ghost btn-sm" onClick={reanudarSegundoTiempo}>
+              Reanudar 2do tiempo
+            </button>
           )}
         </div>
       </div>
 
+      {estado === "en_juego" && fase === "penales" && (
+        <section className="v-tanda" aria-label="Tanda de penales">
+          <div className="v-tanda-head">
+            <b>Tanda de penales</b>
+            <span>
+              {tanda?.ganador
+                ? `Gana ${nombreDe(tanda.ganador)}`
+                : tanda?.muerteSubita
+                ? `Muerte súbita · tiro ${tanda.ronda}`
+                : tanda
+                ? `Tiro ${tanda.ronda} de ${FUTBOL.penalesPorEquipo}`
+                : `${FUTBOL.penalesPorEquipo} tiros por equipo`}
+            </span>
+          </div>
+
+          {!tanda ? (
+            <>
+              <p className="form-hint" style={{ margin: "0 0 10px" }}>¿Quién patea primero?</p>
+              <div className="sheet-options">
+                {[equipoLocal, equipoVisitante].map((eq) => (
+                  <button key={eq.id} className="sheet-option" onClick={() => setPrimeroElegido(eq.id)}>
+                    <span className="color-dot" style={{ background: eq.color_primario }} />
+                    {eq.nombre}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              {[primero as string, segundo].map((id) => {
+                const eq = id === equipoLocal.id ? equipoLocal : equipoVisitante;
+                const lista = tanda.tiros[id] ?? [];
+                const casillas = Math.max(FUTBOL.penalesPorEquipo, lista.length);
+                return (
+                  <div className={`v-tanda-fila ${tanda.turno === id ? "turno" : ""}`} key={id}>
+                    <span className="v-tanda-equipo">
+                      <span className="color-dot" style={{ background: eq.color_primario }} />
+                      {eq.nombre}
+                    </span>
+                    <span className="v-tanda-tiros">
+                      {Array.from({ length: casillas }, (_, k) => (
+                        <i
+                          key={k}
+                          className={lista[k] === undefined ? "" : lista[k] ? "si" : "no"}
+                          aria-label={lista[k] === undefined ? "Sin patear" : lista[k] ? "Convertido" : "Errado"}
+                        >
+                          {lista[k] === undefined ? "" : lista[k] ? "✓" : "✕"}
+                        </i>
+                      ))}
+                    </span>
+                    <b className="tnum">{tanda.goles[id]}</b>
+                  </div>
+                );
+              })}
+
+              {tanda.turno ? (
+                <>
+                  <p className="v-tanda-turno">
+                    Patea <b>{nombreDe(tanda.turno)}</b>
+                  </p>
+                  <div className="v-tanda-btns">
+                    <button className="v-btn gol" onClick={() => patearPenal(true)}>
+                      ✓ Convertido
+                    </button>
+                    <button className="v-btn roja" onClick={() => patearPenal(false)}>
+                      ✕ Errado
+                    </button>
+                  </div>
+                  {tiros.length === 0 && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setPrimeroElegido(null)}>
+                      Cambiar quién patea primero
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button className="btn btn-primary" style={{ width: "100%", marginTop: 12 }} onClick={finalizarPorPenales}>
+                  Finalizar partido · gana {nombreDe(tanda.ganador)} {Math.max(penLocal, penVisitante)}-{Math.min(penLocal, penVisitante)}
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
       <div className="v-grid v-grid-main">
         {ACCIONES.map((a) => (
-          <button key={a.tipo} className={`v-btn ${a.className}`} onClick={() => openSheet(a.tipo)} disabled={estado === "finalizado"}>
+          <button key={a.tipo} className={`v-btn ${a.className}`} onClick={() => openSheet(a.tipo)} disabled={estado === "finalizado" || (fase === "penales" && a.tipo === "gol")}>
             <a.icon />
             {a.label}
           </button>
@@ -376,7 +620,7 @@ export function PartidoEnVivo({
       </div>
       <div className="v-extra">
         {ACCIONES_EXTRA.map((a) => (
-          <button key={a.tipo} type="button" onClick={() => openSheet(a.tipo)} disabled={estado === "finalizado"}>
+          <button key={a.tipo} type="button" onClick={() => openSheet(a.tipo)} disabled={estado === "finalizado" || (fase === "penales" && a.tipo === "gol_en_contra")}>
             <a.icon />
             {a.label}
           </button>
@@ -407,7 +651,7 @@ export function PartidoEnVivo({
         {eventos.filter((e) => !e.anulado).length === 0 && <p className="form-hint">Todavía no hay eventos cargados.</p>}
       </div>
 
-      {sheet && (
+      {sheet && capaEvento.abierta && (
         <div className="sheet-overlay" onClick={closeSheet}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-title">{TODAS.find((a) => a.tipo === sheet.tipo)?.label}</div>
@@ -483,53 +727,8 @@ export function PartidoEnVivo({
         </div>
       )}
 
-      {penalesAbierto && (
-        <div className="sheet-overlay" onClick={() => setPenalesAbierto(false)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-title">Cargar penales</div>
-            <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", margin: "4px 0 18px" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>{equipoLocal.nombre}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPenalesLocal((v) => Math.max(0, v - 1))}>
-                    −
-                  </button>
-                  <span className="v-score tnum" style={{ fontSize: 28 }}>
-                    {penalesLocal}
-                  </span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPenalesLocal((v) => v + 1)}>
-                    +
-                  </button>
-                </div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>{equipoVisitante.nombre}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPenalesVisitante((v) => Math.max(0, v - 1))}>
-                    −
-                  </button>
-                  <span className="v-score tnum" style={{ fontSize: 28 }}>
-                    {penalesVisitante}
-                  </span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPenalesVisitante((v) => v + 1)}>
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-            {penalesLocal === penalesVisitante && <p className="form-hint form-hint-warn">Los penales no pueden terminar empatados.</p>}
-            <button className="btn btn-primary" style={{ width: "100%" }} disabled={penalesLocal === penalesVisitante} onClick={confirmarPenales}>
-              Finalizar {penalesLocal}-{penalesVisitante} por penales
-            </button>
-            <button className="btn btn-ghost" style={{ marginTop: 10, width: "100%" }} onClick={() => setPenalesAbierto(false)}>
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {confirmState && (
-        <div className="sheet-overlay" onClick={() => setConfirmState(null)}>
+      {confirmState && capaConfirmar.abierta && (
+        <div className="sheet-overlay" onClick={cerrarConfirmacion}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-title">Confirmar</div>
             <p className="form-hint" style={{ margin: "0 0 14px" }}>
@@ -539,13 +738,14 @@ export function PartidoEnVivo({
               <button
                 className="btn btn-primary"
                 onClick={() => {
-                  confirmState.accion();
-                  setConfirmState(null);
+                  const { accion } = confirmState;
+                  cerrarConfirmacion();
+                  accion();
                 }}
               >
                 Confirmar
               </button>
-              <button className="btn btn-ghost" onClick={() => setConfirmState(null)}>
+              <button className="btn btn-ghost" onClick={cerrarConfirmacion}>
                 Cancelar
               </button>
             </div>

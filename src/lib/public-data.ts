@@ -97,7 +97,14 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
         away: equipoMap.get(p.equipo_visitante_id as string) as Team,
         homeScore,
         awayScore,
-        statusLabel: p.estado === "entretiempo" ? "ENTRETIEMPO" : cat.deporte === "voley" ? "EN VIVO · SETS" : "EN VIVO",
+        statusLabel:
+          p.estado === "entretiempo"
+            ? "ENTRETIEMPO"
+            : cat.deporte === "voley"
+            ? "EN VIVO · SETS"
+            : p.penales_local !== null && p.penales_visitante !== null
+            ? `PENALES ${p.penales_local}-${p.penales_visitante}`
+            : "EN VIVO",
         court: p.cancha_id ? canchaMap.get(p.cancha_id) ?? "" : ""
       };
     });

@@ -18,7 +18,7 @@ export function VeedorLogin() {
     setSubmitting(true);
     try {
       await signInVeedor(pin);
-      navigate("/veedor");
+      navigate("/veedor", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión.");
     } finally {

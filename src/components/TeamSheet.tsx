@@ -49,7 +49,11 @@ export function TeamSheet({ target, onClose }: { target: TeamRef | null; onClose
   const closeBtn = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!target) return;
+    if (!target) {
+      // Cerrada desde afuera (p. ej. con "atrás"): la próxima vez vuelve a animar.
+      setOpen(false);
+      return;
+    }
     let active = true;
     setVista("resumen");
     setDetail(null);

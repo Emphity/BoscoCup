@@ -99,6 +99,9 @@ export type EventoTipo =
   | "gol_en_contra"
   | "penal_convertido"
   | "penal_errado"
+  /** Tiros de la tanda de penales (no suman al marcador del partido). */
+  | "tanda_convertido"
+  | "tanda_errado"
   | "tarjeta_amarilla"
   | "tarjeta_roja"
   | "doble_amarilla"

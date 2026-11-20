@@ -1,5 +1,6 @@
 import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, StandingRow, Team, ZoneStandings } from "@/types";
 import type { ResultadoLetra, TeamDetail, TeamMatch } from "@/lib/team-detail";
+import { avanzarEnPantalla, proyectarCuadro } from "@/lib/bracket";
 
 /**
  * Datos de ejemplo para que la app se vea completa sin depender de Supabase.
@@ -56,6 +57,50 @@ function bracket(
   return { round, pos: 0, home, away, penalesHome: null, penalesAway: null, ...rest };
 }
 
+// ---- fútbol masculino: 3 grupos de 4 y cuadro de cuartos jugándose ----
+const M = {
+  pueyrredon: team("pueyrredon", "Pueyrredón", "#C2410C"),
+  lavalle: team("lavalle", "Lavalle", "#0F766E"),
+  dorrego: team("dorrego", "Dorrego", "#9333EA"),
+  urquiza: team("urquiza", "Urquiza", "#CA8A04")
+};
+
+const ZONAS_MASC: ZoneStandings[] = [
+  zone("zona-a", "Grupo A", [
+    row(T.sanMartin, 3, 6, 9, false),
+    row(T.belgrano, 3, 3, 6, false),
+    row(T.sarmiento, 3, -1, 3, false, 2),
+    row(M.urquiza, 3, -8, 0, false, 1)
+  ]),
+  zone("zona-b", "Grupo B", [
+    row(T.mitre, 3, 4, 7, false),
+    row(T.guemes, 3, 2, 5, false, 1),
+    row(T.moreno, 3, 0, 4, false),
+    row(M.lavalle, 3, -6, 0, false, 3, 1)
+  ]),
+  zone("zona-c", "Grupo C", [
+    row(T.rivadavia, 3, 5, 9, false),
+    row(M.pueyrredon, 3, 1, 4, false),
+    row(T.alberdi, 3, -1, 3, false, 1),
+    row(M.dorrego, 3, -5, 1, false, 2)
+  ])
+];
+
+/** Cuartos con los 8 mejores: dos terminados (uno por penales), uno en vivo y uno por jugar. */
+function cuadroMasc(): BracketMatch[] {
+  const cuartos = proyectarCuadro(ZONAS_MASC).map((m) => ({ ...m, proyectado: false }));
+  const jugar = (pos: number, cambios: Partial<BracketMatch>) => {
+    const i = cuartos.findIndex((m) => m.pos === pos);
+    if (i >= 0) cuartos[i] = { ...cuartos[i], ...cambios };
+  };
+  const de = (pos: number) => cuartos.find((m) => m.pos === pos) as BracketMatch;
+  jugar(0, { homeScore: 3, awayScore: 1, winnerId: de(0).home.id, pending: false });
+  jugar(1, { homeScore: 1, awayScore: 1, penalesHome: 3, penalesAway: 4, winnerId: de(1).away?.id ?? null, pending: false });
+  jugar(2, { homeScore: 2, awayScore: 1, winnerId: de(2).home.id, enVivo: true, court: "Cancha 1" });
+  jugar(3, { scheduledTime: "15:10", court: "Cancha 2" });
+  return avanzarEnPantalla(cuartos);
+}
+
 function hist(id: string, home: Team, away: Team, homeScore: number, awayScore: number, roundLabel: string, date: string): HistorialMatch {
   return { id, home, away, homeScore, awayScore, penalesHome: null, penalesAway: null, roundLabel, date };
 }
@@ -98,14 +143,8 @@ const futbolMasc: SportData = {
       court: "Cancha 2"
     }
   ],
-  zones: [
-    zone("zona-a", "Zona A", [row(T.sanMartin, 3, 6, 9, true), row(T.belgrano, 3, 3, 7, true), row(T.sarmiento, 3, -1, 3, false)]),
-    zone("zona-b", "Zona B", [row(T.mitre, 3, -2, 3, false), row(T.moreno, 3, -4, 1, false), row(T.guemes, 3, -2, 0, false)])
-  ],
-  bracket: [
-    bracket("Semifinal", T.sanMartin, T.mitre, { homeScore: 2, awayScore: 1, winnerId: T.sanMartin.id, pending: false }),
-    bracket("Final", T.sanMartin, T.belgrano, { homeScore: null, awayScore: null, winnerId: null, pending: true, scheduledTime: "18:00" })
-  ],
+  zones: ZONAS_MASC,
+  bracket: cuadroMasc(),
   historial: [
     hist("h-fm-1", T.sanMartin, T.mitre, 2, 1, "Semifinal", "19/10"),
     hist("h-fm-2", T.belgrano, T.sarmiento, 2, 1, "Zona A", "18/10"),
