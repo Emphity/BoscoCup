@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { categoriaLabel } from "@/lib/labels";
-import { CANCHA_FEMENINO, DIA_TORNEO, FUTBOL, FUTBOL_MINUTOS_POR_TURNO, esLiguilla, sinPlayoff } from "@/lib/reglas";
+import { CANCHA_FEMENINO, DIA_TORNEO, FUTBOL, FUTBOL_MINUTOS_POR_TURNO, esLiguilla, horaTexto, sinPlayoff } from "@/lib/reglas";
 import { IconPencil } from "@/components/icons";
+import { repartirTurnos, type PartidoAProgramar, type PartidoOcupado } from "@/lib/programar-grupos";
 import type { CanchaRow, Categoria, EquipoRow, PartidoRow, Profile } from "@/lib/db-types";
 
 
@@ -300,7 +301,7 @@ export function AdminPartidos() {
       return setAviso(todos.length < 2 ? "Cargá al menos 2 equipos para armar el fixture." : "El fixture de grupos ya está completo.");
     }
     const conHorario = deporte === "futbol";
-    const horaInicioTxt = liguilla ? "12:00" : "9:30";
+    const horaInicioTxt = horaTexto(liguilla ? FUTBOL.horaInicioFemenino : FUTBOL.horaInicio);
     const detalle = conHorario
       ? `, con cancha y horario el domingo ${DIA_TORNEO.dia} desde las ${horaInicioTxt} (turnos de ${FUTBOL_MINUTOS_POR_TURNO}'). Después podés cambiar cualquiera con el lápiz.`
       : ", con cancha asignada al azar (el horario lo definís después con el lápiz: el vóley no tiene una duración fija, depende de los sets).";
@@ -321,16 +322,9 @@ export function AdminPartidos() {
   }
 
   /**
-   * Fútbol: reparte los partidos de grupos de la categoría que todavía no tienen
-   * horario en turnos de 25' (10' + 5' de descanso + 10') desde las 9:30 del día
-   * del torneo, uno pegado al otro: al terminar un partido arranca el siguiente.
-   *
-   * Cada grupo juega todos sus partidos en su propia cancha (grupo A → cancha 1,
-   * grupo B → cancha 2, o lo que se elija en el panel), así los grupos van a la
-   * par: el turno 1 del grupo A arranca a la misma hora que el turno 1 del B.
-   * Dentro de cada cancha se ordenan para que nadie juegue dos seguidos si se
-   * puede evitar y que todos los equipos avancen parejo. No pisa partidos ya
-   * programados (de cualquier categoría) y respeta la cancha si ya estaba puesta.
+   * Fútbol: pone cancha y horario a los partidos de grupos de la categoría que
+   * todavía no tienen (reglas en `repartirTurnos`). No pisa partidos ya
+   * programados de ninguna categoría.
    */
   async function programarSinHorario(): Promise<{ programados: number; sinLugar: number; error?: string }> {
     if (!supabase) return { programados: 0, sinLugar: 0, error: "Supabase no está configurado." };
@@ -360,92 +354,29 @@ export function AdminPartidos() {
     const equipoTarde = (equipoTardeData as { id: string } | null)?.id ?? null;
 
     const { anio, mes, dia } = DIA_TORNEO;
-    const inicio = new Date(anio, mes - 1, dia, FUTBOL.horaInicio.horas, FUTBOL.horaInicio.minutos).getTime();
-    const turnoMs = FUTBOL_MINUTOS_POR_TURNO * 60 * 1000;
-    const finDia = new Date(anio, mes - 1, dia, 23, 59).getTime();
-    // Liguilla (femenino): no arranca hasta las 12:00, aunque la cancha esté libre antes.
-    const horaInicioCat = liguilla ? FUTBOL.horaInicioFemenino : FUTBOL.horaInicio;
-    const turnoMinimo = Math.max(
-      0,
-      Math.ceil((new Date(anio, mes - 1, dia, horaInicioCat.horas, horaInicioCat.minutos).getTime() - inicio) / turnoMs)
-    );
-
-    // Lo que ya está programado ese día ocupa canchas y equipos.
     const { data: ocupadosData } = await supabase
       .from("partidos")
       .select("cancha_id, equipo_local_id, equipo_visitante_id, fecha_hora_programada")
-      .gte("fecha_hora_programada", new Date(inicio).toISOString())
-      .lte("fecha_hora_programada", new Date(finDia).toISOString());
-    const ocupados = ((ocupadosData as Pick<PartidoRow, "cancha_id" | "equipo_local_id" | "equipo_visitante_id" | "fecha_hora_programada">[]) ?? []).map(
-      (o) => ({ ...o, turno: Math.floor((new Date(o.fecha_hora_programada as string).getTime() - inicio) / turnoMs) })
-    );
-    const canchaOcupada = new Set(ocupados.filter((o) => o.cancha_id).map((o) => `${o.cancha_id}|${o.turno}`));
-    const equipoOcupado = new Set(
-      ocupados.flatMap((o) => [o.equipo_local_id, o.equipo_visitante_id].filter(Boolean).map((id) => `${id}|${o.turno}`))
-    );
+      .gte("fecha_hora_programada", new Date(anio, mes - 1, dia, 0, 0).toISOString())
+      .lte("fecha_hora_programada", new Date(anio, mes - 1, dia, 23, 59).toISOString());
 
-    // Cada grupo con su lista de partidos pendientes.
-    const porGrupo = new Map<string, Pendiente[]>();
-    for (const p of pendientes) {
-      const k = p.grupo_id ?? "";
-      porGrupo.set(k, [...(porGrupo.get(k) ?? []), p]);
-    }
-
+    const { asignados, sinLugar } = repartirTurnos({
+      pendientes: pendientes as PartidoAProgramar[],
+      ocupados: (ocupadosData as PartidoOcupado[]) ?? [],
+      canchas: canchasCompatibles.map((c) => c.id),
+      grupos: grupos.map((g) => g.id),
+      liguilla,
+      canchaFemenino,
+      equipoTarde
+    });
     let programados = 0;
-    let sinLugar = 0;
-    for (const [grupoId, lista] of porGrupo) {
-      const canchaDelGrupo = liguilla ? canchaFemenino : grupoId ? canchaGrupo(grupoId) : "";
-      const jugados = new Map<string, number>();
-      const ultimoTurno = new Map<string, number>();
-      const restantes = [...lista];
-
-      while (restantes.length > 0) {
-        // Primer turno con lugar; entre los partidos que entran, el que deja
-        // descansar a todos y sea de los equipos que menos jugaron.
-        let elegido: { idx: number; turno: number; cancha: string } | null = null;
-        for (let turno = turnoMinimo; inicio + turno * turnoMs <= finDia && !elegido; turno++) {
-          let mejor: { idx: number; cancha: string; puntaje: number } | null = null;
-          for (let idx = 0; idx < restantes.length; idx++) {
-            const p = restantes[idx];
-            const equiposP = [p.equipo_local_id, p.equipo_visitante_id as string];
-            if (equiposP.some((e) => equipoOcupado.has(`${e}|${turno}`))) continue;
-            // El femenino va siempre a su cancha, aunque el partido tuviera otra guardada.
-            const opciones =
-              liguilla && canchaDelGrupo
-                ? [canchaDelGrupo]
-                : p.cancha_id
-                  ? [p.cancha_id]
-                  : canchaDelGrupo
-                    ? [canchaDelGrupo]
-                    : canchasCompatibles.map((c) => c.id);
-            const cancha = opciones.find((c) => !canchaOcupada.has(`${c}|${turno}`));
-            if (!cancha) continue;
-            const seguidos = equiposP.filter((e) => ultimoTurno.get(e) === turno - 1).length;
-            // A "Shh caiao" se lo posterga: solo entra cuando no queda otro partido mejor para ese turno.
-            const tarde = equipoTarde && equiposP.includes(equipoTarde) ? 100_000 : 0;
-            const puntaje = tarde + seguidos * 1000 + equiposP.reduce((acc, e) => acc + (jugados.get(e) ?? 0), 0);
-            if (!mejor || puntaje < mejor.puntaje) mejor = { idx, cancha, puntaje };
-          }
-          if (mejor) elegido = { idx: mejor.idx, turno, cancha: mejor.cancha };
-        }
-        if (!elegido) {
-          sinLugar += restantes.length;
-          break;
-        }
-        const [p] = restantes.splice(elegido.idx, 1);
-        canchaOcupada.add(`${elegido.cancha}|${elegido.turno}`);
-        for (const e of [p.equipo_local_id, p.equipo_visitante_id as string]) {
-          equipoOcupado.add(`${e}|${elegido.turno}`);
-          jugados.set(e, (jugados.get(e) ?? 0) + 1);
-          ultimoTurno.set(e, elegido.turno);
-        }
-        const { error: err } = await supabase
-          .from("partidos")
-          .update({ cancha_id: elegido.cancha, fecha_hora_programada: new Date(inicio + elegido.turno * turnoMs).toISOString() })
-          .eq("id", p.id);
-        if (err) return { programados, sinLugar, error: err.message };
-        programados++;
-      }
+    for (const a of asignados) {
+      const { error: err } = await supabase
+        .from("partidos")
+        .update({ cancha_id: a.cancha_id, fecha_hora_programada: a.fecha_hora_programada })
+        .eq("id", a.id);
+      if (err) return { programados, sinLugar, error: err.message };
+      programados++;
     }
     return { programados, sinLugar };
   }
@@ -468,7 +399,8 @@ export function AdminPartidos() {
    */
   async function onReprogramarGrupos() {
     if (!supabase || !categoriaId) return;
-    if (!window.confirm("¿Volver a programar desde las 9:30 todos los partidos de grupos de esta categoría que todavía no empezaron?")) return;
+    const desde = horaTexto(liguilla ? FUTBOL.horaInicioFemenino : FUTBOL.horaInicio);
+    if (!window.confirm(`¿Volver a programar desde las ${desde} todos los partidos de grupos de esta categoría que todavía no empezaron?`)) return;
     setError(null);
     setAviso(null);
     const { error: err } = await supabase
@@ -589,18 +521,20 @@ export function AdminPartidos() {
           <div>
             <h3 className="panel-title">Horarios de fútbol</h3>
             <p className="form-hint" style={{ margin: 0 }}>
-              Todo se juega el domingo {DIA_TORNEO.dia}/{DIA_TORNEO.mes}. Puertas 8:00 · masculino arranca 9:30 · femenino (liguilla,
-              ida y vuelta) arranca 12:00 en {canchas.find((c) => c.id === canchaFemenino)?.nombre ?? "su cancha"}. En grupos y cuartos cada partido dura {FUTBOL_MINUTOS_POR_TURNO}': 2 tiempos de{" "}
+              Todo se juega el domingo {DIA_TORNEO.dia}/{DIA_TORNEO.mes}. Puertas 8:00 · masculino arranca {horaTexto(FUTBOL.horaInicio)} ·
+              femenino (liguilla, ida y vuelta) arranca {horaTexto(FUTBOL.horaInicioFemenino)} en{" "}
+              {canchas.find((c) => c.id === canchaFemenino)?.nombre ?? "su cancha"}. En grupos y cuartos cada partido dura {FUTBOL_MINUTOS_POR_TURNO}': 2 tiempos de{" "}
               {FUTBOL.minutosPorTiempoGrupos}' con {FUTBOL.minutosDescanso}' de descanso, y al terminar uno arranca el siguiente. Semis
-              y final, 2 tiempos de {FUTBOL.minutosPorTiempo}'. Cada grupo masculino juega todos sus partidos en su
-              cancha (van a la par, usando las 3 canchas de fútbol para terminar antes); el playoff masculino usa solo las 2
-              primeras canchas, para dejar la 3ª libre para el femenino. En playoff, si empatan, van a penales (tanda de 5).
+              y final, 2 tiempos de {FUTBOL.minutosPorTiempo}'. Hasta las {horaTexto(FUTBOL.horaInicioFemenino)} cada grupo masculino juega
+              en su cancha (las 3 a la par); desde esa hora lo que falte, y el playoff, va solo a las canchas 1 y 2. En playoff, si
+              empatan, van a penales (tanda de 5).
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
             {liguilla ? (
               <span className="form-hint" style={{ margin: 0 }}>
-                Liguilla (ida y vuelta) → {canchas.find((c) => c.id === canchaFemenino)?.nombre ?? "sin cancha"} desde las 12:00
+                Liguilla (ida y vuelta) → {canchas.find((c) => c.id === canchaFemenino)?.nombre ?? "sin cancha"} desde las{" "}
+                {horaTexto(FUTBOL.horaInicioFemenino)}
               </span>
             ) : (
               grupos.length > 0 && (

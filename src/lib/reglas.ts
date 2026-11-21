@@ -1,7 +1,8 @@
 /**
  * Reglas de tiempo del torneo (fútbol masculino y femenino).
  *
- * - Puertas abren a las 8:00; los partidos de fase de grupos arrancan a las 9:30.
+ * - Puertas abren a las 8:00; el masculino arranca a las 10:00 y el femenino
+ *   a las 12:30.
  * - Fase de grupos, octavos y cuartos: cada partido dura 25 minutos en total
  *   (10' + 5' de descanso + 10') y al terminar uno arranca el siguiente.
  * - Semis, 3er puesto y final: 15' + 5' de descanso + 15' (turno de 35').
@@ -15,9 +16,12 @@
 export const DIA_TORNEO = { anio: 2026, mes: 11, dia: 22 } as const;
 
 export const FUTBOL = {
-  horaInicio: { horas: 9, minutos: 30 },
-  /** El femenino arranca más tarde: a esa hora libera del todo la Cancha 3 el masculino. */
-  horaInicioFemenino: { horas: 12, minutos: 0 },
+  horaInicio: { horas: 10, minutos: 0 },
+  /**
+   * Arranca el femenino en la Cancha 3. Hasta esa hora el masculino usa las 3
+   * canchas; desde ahí, solo la 1 y la 2 (grupos que falten y playoffs).
+   */
+  horaInicioFemenino: { horas: 12, minutos: 30 },
   /** Tiempos de la fase de grupos, octavos y cuartos (turno total de 25'). */
   minutosPorTiempoGrupos: 10,
   /** Tiempos de semis, 3er puesto y final (turno total de 35'). */
@@ -27,6 +31,11 @@ export const FUTBOL = {
   /** Tiros por equipo en la tanda de penales; si siguen iguales, muerte súbita. */
   penalesPorEquipo: 5
 } as const;
+
+/** { horas: 12, minutos: 30 } → "12:30". */
+export function horaTexto(h: { horas: number; minutos: number }): string {
+  return `${h.horas}:${String(h.minutos).padStart(2, "0")}`;
+}
 
 /** Minutos que ocupa un partido de fase de grupos en la cancha (25'). */
 export const FUTBOL_MINUTOS_POR_TURNO = FUTBOL.minutosPorTiempoGrupos * 2 + FUTBOL.minutosDescanso;
@@ -47,7 +56,7 @@ export function minutosDeTurno(ronda: string | null | undefined): number {
 /**
  * Fútbol femenino se juega como liguilla: un solo grupo, ida y vuelta (cada
  * partido se juega dos veces, local y visitante invertidos), en la Cancha 3,
- * arrancando a las 12:00 (para entonces el masculino ya liberó esa cancha), y
+ * arrancando a las 12:30 (desde esa hora el masculino ya no usa esa cancha), y
  * la campeona es la que más puntos suma. No hay cruces.
  */
 export function esLiguilla(c: { deporte: string; rama: string } | null | undefined): boolean {

@@ -15,7 +15,7 @@ Resultados al instante · Tablas de posiciones · Cuadro de playoffs
 ![Fútbol femenino](https://img.shields.io/badge/F%C3%BAtbol-femenino-0f2147?style=for-the-badge)
 ![Vóley mixto](https://img.shields.io/badge/V%C3%B3ley-mixto-e3262e?style=for-the-badge)
 
-📅 **Domingo 22 de noviembre de 2026** · ⏰ Primer partido a las **9:30**
+📅 **Domingo 22 de noviembre de 2026** · ⏰ Primer partido a las **10:00**
 
 </div>
 
