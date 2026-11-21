@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
+import type { BracketMatch, Branch, HistorialMatch, HorarioMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import type { Categoria, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
 import { computeZonesForCategoria, estaEnVivo, teamFrom, zonasParaMostrar } from "@/lib/standings";
 import { avanzarEnPantalla, cuadroSoloGrupos, proyectarCuadro } from "@/lib/bracket";
@@ -107,6 +107,72 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
             ? `PENALES ${p.penales_local}-${p.penales_visitante}`
             : "EN VIVO",
         court: p.cancha_id ? canchaMap.get(p.cancha_id) ?? "" : ""
+      };
+    });
+}
+
+/**
+ * Todos los partidos del torneo (todas las categorías) para la grilla de
+ * horarios, ordenados por hora y cancha; los que todavía no tienen hora van
+ * al final. Los de fútbol en juego llevan el marcador del momento.
+ */
+export async function fetchHorarios(): Promise<HorarioMatch[]> {
+  if (!supabase) return [];
+  const [{ data: partidosData }, categorias, equipos, canchas, grupos] = await Promise.all([
+    supabase.from("partidos").select("*"),
+    getCategorias(),
+    getEquipos(),
+    getCanchas(),
+    getGrupos()
+  ]);
+  const partidos = (partidosData as PartidoRow[]) ?? [];
+  const categoriaMap = new Map(categorias.map((c) => [c.id, c]));
+  const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
+  const canchaMap = new Map(canchas.map((c) => [c.id, c.nombre]));
+  const grupoMap = new Map(grupos.map((g) => [g.id, g.nombre]));
+
+  const futbolEnJuego = partidos.filter((p) => estaEnVivo(p) && categoriaMap.get(p.categoria_id)?.deporte === "futbol");
+  let eventos: EventoPartidoRow[] = [];
+  if (futbolEnJuego.length > 0) {
+    const { data } = await supabase
+      .from("eventos_partido")
+      .select("*")
+      .in(
+        "partido_id",
+        futbolEnJuego.map((p) => p.id)
+      )
+      .eq("anulado", false);
+    eventos = (data as EventoPartidoRow[]) ?? [];
+  }
+
+  return partidos
+    .filter((p) => categoriaMap.has(p.categoria_id) && equipoMap.has(p.equipo_local_id))
+    .sort((a, b) => {
+      const ta = a.fecha_hora_programada ? new Date(a.fecha_hora_programada).getTime() : Infinity;
+      const tb = b.fecha_hora_programada ? new Date(b.fecha_hora_programada).getTime() : Infinity;
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      return (canchaMap.get(a.cancha_id ?? "") ?? "").localeCompare(canchaMap.get(b.cancha_id ?? "") ?? "", "es", { numeric: true });
+    })
+    .map((p) => {
+      const cat = categoriaMap.get(p.categoria_id) as Categoria;
+      const enVivo = estaEnVivo(p);
+      const marcador = enVivo && cat.deporte === "futbol" ? scoreDesde(p, eventos) : null;
+      const conResultado = enVivo || p.estado === "finalizado";
+      return {
+        id: p.id,
+        sport: cat.deporte,
+        branch: branchDe(cat),
+        categoriaLabel: ramaLabelDe(cat),
+        home: equipoMap.get(p.equipo_local_id) as Team,
+        away: p.equipo_visitante_id ? equipoMap.get(p.equipo_visitante_id) ?? null : null,
+        fecha: p.fecha_hora_programada,
+        court: p.cancha_id ? canchaMap.get(p.cancha_id) ?? null : null,
+        roundLabel: p.ronda_eliminatoria ?? (p.grupo_id ? grupoMap.get(p.grupo_id) ?? "Fase de grupos" : sinPlayoff(cat) ? "Todos contra todos" : "Fase de grupos"),
+        estado: enVivo ? "en_vivo" : p.estado === "finalizado" || p.estado === "walkover" ? "finalizado" : p.estado === "programado" ? "programado" : "suspendido",
+        homeScore: marcador ? marcador.home : conResultado ? p.resultado_local : null,
+        awayScore: marcador ? marcador.away : conResultado ? p.resultado_visitante : null,
+        penalesHome: p.penales_local,
+        penalesAway: p.penales_visitante
       };
     });
 }

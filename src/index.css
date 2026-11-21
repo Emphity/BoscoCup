@@ -1095,6 +1095,64 @@ i.tcard.r {
   font-size: 15px;
 }
 
+/* ---- horarios ---- */
+.hor-filtros {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -16px 14px;
+  padding: 0 16px 2px;
+}
+.hor-filtros::-webkit-scrollbar {
+  display: none;
+}
+.hor-filtros .chip-option {
+  flex: none;
+  text-transform: none;
+}
+.hor-bloque + .hor-bloque {
+  margin-top: 18px;
+}
+.hor-hora {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 2px;
+  margin-bottom: 4px;
+  background: var(--color-surface);
+}
+.hor-partido {
+  border-left: 3px solid var(--sport);
+}
+.hor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.hor-cancha {
+  font-weight: 700;
+  color: var(--color-text);
+}
+.hor-estado {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.hor-estado.vivo {
+  color: var(--color-card-red);
+}
+
 /* ---- barra de pestañas flotante ---- */
 .tabbar {
   position: fixed;

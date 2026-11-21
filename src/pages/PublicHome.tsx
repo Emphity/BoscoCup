@@ -1,9 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useCapa } from "@/lib/historial";
-import type { Branch, HistorialMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
+import type { Branch, HistorialMatch, HorarioMatch, LiveMatch, Sport, Team, ZoneStandings } from "@/types";
 import { getMockAllLiveMatches, getMockData } from "@/lib/mock-data";
-import { fetchAllLiveMatches, fetchPublicData, type PublicData } from "@/lib/public-data";
+import { fetchAllLiveMatches, fetchHorarios, fetchPublicData, type PublicData } from "@/lib/public-data";
 import { TABLAS_ESTATICAS, invalidarTabla, invalidarTodo, type TablaEstatica } from "@/lib/static-cache";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DynamicIsland } from "@/components/DynamicIsland";
@@ -14,6 +14,7 @@ import {
   IconAccess,
   IconBracket,
   IconClipboard,
+  IconClock,
   IconFollow,
   IconFutbol,
   IconHome,
@@ -32,6 +33,7 @@ const SPORTS: { id: Sport; label: string; icon: typeof IconFutbol }[] = [
 
 const PESTANAS = [
   { id: "inicio", label: "Inicio", icon: IconHome },
+  { id: "horarios", label: "Horarios", icon: IconClock },
   { id: "tabla", label: "Tabla", icon: IconTable },
   { id: "cruces", label: "Cruces", icon: IconBracket },
   { id: "historial", label: "Historial", icon: IconFollow }
@@ -80,6 +82,7 @@ export function PublicHome() {
   const [theme, setTheme] = useState<"light" | "dark" | null>(temaInicial);
   const [data, setData] = useState<PublicData>(EMPTY);
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
+  const [horarios, setHorarios] = useState<HorarioMatch[] | null>(null);
   const [equipo, setEquipo] = useState<TeamRef | null>(null);
   const capaEquipo = useCapa("equipo");
   const capaAcceso = useCapa("acceso");
@@ -100,6 +103,7 @@ export function PublicHome() {
     if (!isSupabaseConfigured) {
       setData(getMockData(sport, ramaActual));
       setLiveMatches(getMockAllLiveMatches());
+      setHorarios([]);
       return () => { active = false; };
     }
     const client = supabase;
@@ -109,6 +113,7 @@ export function PublicHome() {
     // nueva, se descarta en vez de pisar datos más frescos.
     let seqPublico = 0;
     let seqVivo = 0;
+    let seqHorarios = 0;
     let categoriaId: string | undefined;
     let idsEnVivo = new Set<string>();
 
@@ -128,27 +133,38 @@ export function PublicHome() {
       setLiveMatches(live);
     }
 
+    async function cargarHorarios() {
+      const seq = ++seqHorarios;
+      const h = await fetchHorarios();
+      if (!active || seq !== seqHorarios) return;
+      setHorarios(h);
+    }
+
     // Los eventos realtime se juntan: durante un partido llegan varios seguidos
     // y todos los espectadores los reciben a la vez. Se espera un poco (con una
     // demora al azar para no pegarle a la base todos juntos) y se refresca solo
     // lo que pudo haber cambiado.
     let pendientePublico = false;
     let pendienteVivo = false;
+    let pendienteHorarios = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    function programar(publico: boolean, vivo: boolean) {
+    function programar(publico: boolean, vivo: boolean, horarios = false) {
       pendientePublico ||= publico;
       pendienteVivo ||= vivo;
+      pendienteHorarios ||= horarios;
       if (timer) return;
       timer = setTimeout(() => {
         timer = undefined;
         if (pendientePublico) void cargarPublico();
         if (pendienteVivo) void cargarVivo();
-        pendientePublico = pendienteVivo = false;
+        if (pendienteHorarios) void cargarHorarios();
+        pendientePublico = pendienteVivo = pendienteHorarios = false;
       }, 300 + Math.random() * 400);
     }
 
     void cargarPublico();
     void cargarVivo();
+    void cargarHorarios();
 
     type Fila = Record<string, unknown> | undefined;
     const filaDe = (payload: { new: unknown; old: unknown }) => ({
@@ -166,18 +182,19 @@ export function PublicHome() {
       const publico = !cat || !categoriaId || cat === categoriaId;
       // Carrusel en vivo: si el partido está o estaba en juego.
       const vivo = !id || idsEnVivo.has(id) || estado === "en_juego" || estado === "entretiempo";
-      programar(publico, vivo);
+      // Horarios muestra todas las categorías: cualquier cambio de partido cuenta.
+      programar(publico, vivo, true);
     }
 
     function onEvento() {
       // La tabla y el cuadro son en vivo: un gol o una tarjeta en un partido en
       // juego ya mueve las posiciones, así que siempre se refresca todo.
-      programar(true, true);
+      programar(true, true, true);
     }
 
     function onEstatica(tabla: TablaEstatica) {
       invalidarTabla(tabla);
-      programar(true, true);
+      programar(true, true, true);
     }
 
     // Con el celular bloqueado o la pestaña en segundo plano se pueden perder
@@ -185,7 +202,7 @@ export function PublicHome() {
     function onVisible() {
       if (document.visibilityState !== "visible") return;
       invalidarTodo();
-      programar(true, true);
+      programar(true, true, true);
     }
     document.addEventListener("visibilitychange", onVisible);
 
@@ -256,7 +273,8 @@ export function PublicHome() {
       </header>
       <div className="brand-rule" aria-hidden="true" />
 
-      <div className="pub-controls">
+      {/* Horarios muestra todo el torneo y tiene su propio filtro. */}
+      {pestana !== "horarios" && <div className="pub-controls">
         <Segmented
           label="Deporte"
           value={sport}
@@ -284,9 +302,16 @@ export function PublicHome() {
             ]}
           />
         )}
-      </div>
+      </div>}
 
       <main className="pub-main" key={pestana}>
+        {pestana === "horarios" && (
+          <section className="card">
+            <SectionHead title="Horarios" />
+            <Horarios matches={horarios} onTeam={(team, m) => mostrarEquipo({ team, sport: m.sport, branch: m.branch })} />
+          </section>
+        )}
+
         {pestana === "inicio" && (
           <>
             {liveMatches.length > 0 && <LiveRail matches={liveMatches} onTeam={abrirDesdeVivo} />}
@@ -437,6 +462,99 @@ function HojaAcceso({ onClose }: { onClose: () => void }) {
         </button>
       </div>
     </div>
+  );
+}
+
+const FILTROS_HORARIO: { id: string; label: string; incluye: (m: HorarioMatch) => boolean }[] = [
+  { id: "todos", label: "Todos", incluye: () => true },
+  { id: "futbol-masculino", label: "Fútbol masc.", incluye: (m) => m.sport === "futbol" && m.branch === "masculino" },
+  { id: "futbol-femenino", label: "Fútbol fem.", incluye: (m) => m.sport === "futbol" && m.branch === "femenino" },
+  { id: "voley", label: "Vóley", incluye: (m) => m.sport === "voley" }
+];
+
+const horaCorta = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** Grilla de horarios de todo el torneo, agrupada por hora de inicio. */
+function Horarios({ matches, onTeam }: { matches: HorarioMatch[] | null; onTeam: (t: Team, m: HorarioMatch) => void }) {
+  const [filtro, setFiltro] = useState("todos");
+  if (matches === null) return <p className="empty-note">Cargando horarios…</p>;
+  const incluye = FILTROS_HORARIO.find((f) => f.id === filtro)?.incluye ?? (() => true);
+  const visibles = matches.filter(incluye);
+
+  const bloques: { hora: string; partidos: HorarioMatch[] }[] = [];
+  for (const m of visibles) {
+    const hora = m.fecha ? horaCorta(m.fecha) : "Sin horario";
+    const ultimo = bloques[bloques.length - 1];
+    if (ultimo?.hora === hora) ultimo.partidos.push(m);
+    else bloques.push({ hora, partidos: [m] });
+  }
+
+  return (
+    <>
+      <div className="hor-filtros" role="group" aria-label="Filtrar por categoría">
+        {FILTROS_HORARIO.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className={`chip-option ${filtro === f.id ? "active" : ""}`}
+            aria-pressed={filtro === f.id}
+            onClick={() => setFiltro(f.id)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {bloques.length === 0 ? (
+        <p className="empty-note">Todavía no hay partidos programados{filtro !== "todos" ? " en esta categoría" : ""}.</p>
+      ) : (
+        bloques.map((b) => (
+          <div className="hor-bloque" key={b.hora}>
+            <div className="hor-hora tnum">{b.hora}</div>
+            {b.partidos.map((m) => {
+              const conMarcador = m.homeScore !== null && m.awayScore !== null;
+              const penales = m.penalesHome !== null && m.penalesAway !== null;
+              const homeGana = m.estado === "finalizado" && conMarcador && ((m.homeScore as number) > (m.awayScore as number) || (penales && (m.penalesHome as number) > (m.penalesAway as number)));
+              const awayGana = m.estado === "finalizado" && conMarcador && ((m.awayScore as number) > (m.homeScore as number) || (penales && (m.penalesAway as number) > (m.penalesHome as number)));
+              return (
+                <div className={`duel hor-partido ${m.estado === "finalizado" ? "" : "pending"}`} key={m.id} style={{ "--sport": `var(--color-${m.sport})` } as CSSProperties}>
+                  <div className="duel-meta hor-meta">
+                    <span className="hor-cancha">{m.court ?? "Cancha a definir"}</span>
+                    <span>
+                      {m.categoriaLabel} · {m.roundLabel}
+                    </span>
+                    {m.estado === "en_vivo" && (
+                      <span className="hor-estado vivo">
+                        <span className="live-dot" /> En vivo
+                      </span>
+                    )}
+                    {m.estado === "finalizado" && <span className="hor-estado">Final</span>}
+                    {m.estado === "suspendido" && <span className="hor-estado">Suspendido</span>}
+                  </div>
+                  <div className={`duel-row ${homeGana ? "win" : ""}`}>
+                    <TeamName team={m.home} onTeam={(t) => onTeam(t, m)} strong={homeGana} />
+                    {conMarcador && (
+                      <span className="score tnum">
+                        {m.homeScore}
+                        {penales && <small>({m.penalesHome})</small>}
+                      </span>
+                    )}
+                  </div>
+                  <div className={`duel-row ${awayGana ? "win" : ""}`}>
+                    {m.away ? <TeamName team={m.away} onTeam={(t) => onTeam(t, m)} strong={awayGana} /> : <span className="tbd">A definir</span>}
+                    {conMarcador && (
+                      <span className="score tnum">
+                        {m.awayScore}
+                        {penales && <small>({m.penalesAway})</small>}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))
+      )}
+    </>
   );
 }
 

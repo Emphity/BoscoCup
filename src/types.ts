@@ -80,6 +80,28 @@ export interface BracketMatch {
   seedAway?: string;
 }
 
+/** Un partido en la grilla de horarios (todas las categorías). */
+export interface HorarioMatch {
+  id: string;
+  sport: Sport;
+  branch: Branch;
+  /** "Fútbol Masculino", "Vóley Mixto"… */
+  categoriaLabel: string;
+  home: Team;
+  /** null en un cruce que todavía espera rival. */
+  away: Team | null;
+  /** ISO de la hora programada (null si todavía no tiene). */
+  fecha: string | null;
+  court: string | null;
+  /** "Grupo A", "Liguilla", "Cuartos"… */
+  roundLabel: string;
+  estado: "programado" | "en_vivo" | "finalizado" | "suspendido";
+  homeScore: number | null;
+  awayScore: number | null;
+  penalesHome: number | null;
+  penalesAway: number | null;
+}
+
 export interface HistorialMatch {
   id: string;
   home: Team;

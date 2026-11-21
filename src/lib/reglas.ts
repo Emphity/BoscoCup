@@ -105,6 +105,9 @@ export const VOLEY = {
   puntosPorSet: 20,
   diferenciaMinima: 2,
   setsParaGanar: 2,
+  /** Puntos en la tabla: ganar el partido (2-0 o 2-1) da 3, perderlo da 0. */
+  puntosVictoria: 3,
+  puntosDerrota: 0,
   /** Lo que se reserva de cancha por partido al programar los playoffs. */
   minutosPorTurno: 40
 } as const;

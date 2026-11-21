@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { sinPlayoff, vueltasDeGrupo } from "@/lib/reglas";
+import { VOLEY, sinPlayoff, vueltasDeGrupo } from "@/lib/reglas";
 import type { StandingRow, Team, ZoneStandings } from "@/types";
 import type { Categoria, EquipoRow, GrupoRow, PartidoRow } from "@/lib/db-types";
 
@@ -13,14 +13,11 @@ type Tarjetas = { amarillas: number; rojas: number };
 export type TantosPartido = { local: number; visitante: number };
 
 /**
- * Puntos que da un partido de vóley a cada equipo según los sets ganados
- * (al mejor de 3): 2-0 → 3 al ganador y 0 al perdedor; 2-1 → 2 al ganador y
- * 1 al perdedor. Si se cerró igualado (no debería pasar), cuenta como empate.
+ * Puntos que da un partido de vóley (al mejor de 3): el que gana el partido
+ * (2-0 o 2-1) suma 3 y el que pierde, 0. No hay empates en vóley.
  */
-export function puntosVoley(setsPropios: number, setsRival: number, cat: Categoria): number {
-  if (setsPropios === setsRival) return cat.puntos_empate;
-  if (setsPropios > setsRival) return setsRival === 0 ? 3 : 2;
-  return setsPropios === 0 ? 0 : 1;
+export function puntosVoley(setsPropios: number, setsRival: number): number {
+  return setsPropios > setsRival ? VOLEY.puntosVictoria : VOLEY.puntosDerrota;
 }
 
 /**
@@ -79,8 +76,8 @@ export function computeStandings(
       visitante.pe++;
     }
     if (esVoley) {
-      local.pts += puntosVoley(rl, rv, cat);
-      visitante.pts += puntosVoley(rv, rl, cat);
+      local.pts += puntosVoley(rl, rv);
+      visitante.pts += puntosVoley(rv, rl);
       const t = tantos.get(p.id);
       if (t) {
         local.tantosDiff += t.local - t.visitante;

@@ -126,16 +126,16 @@ Los equipos de cada categoría se dividen en grupos y **juegan todos contra todo
 </td>
 <td valign="top">
 
-| Resultado | Ganador | Perdedor |
-|---|:-:|:-:|
-| 2 sets a 0 | **3** | **0** |
-| 2 sets a 1 | **2** | **1** |
+| Resultado | Puntos |
+|---|:-:|
+| Victoria (2-0 o 2-1) | **3** |
+| Derrota | **0** |
 
 </td>
 </tr>
 </table>
 
-> 💡 En vóley, perder 2-1 da **1 punto**: se premia haber peleado el partido.
+> 💡 En vóley cada set se juega a **20 puntos** y hay que ganarlo por **2 de diferencia** (si llegan 19-19, sigue hasta que uno saque 2). Gana el partido el primero que gana 2 sets.
 
 **¿Y si dos equipos terminan con los mismos puntos?** La tabla los ordena, en este orden, por:
 
