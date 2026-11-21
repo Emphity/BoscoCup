@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { esLiguilla } from "@/lib/reglas";
 import type { StandingRow, Team, ZoneStandings } from "@/types";
 import type { Categoria, EquipoRow, GrupoRow, PartidoRow } from "@/lib/db-types";
 
@@ -124,10 +125,12 @@ export function computeStandings(
     );
 
   const hayJugados = rows.some((r) => r.played > 0);
+  const liguilla = esLiguilla(cat);
   rows.forEach((row, i) => {
     row.position = i + 1;
     // Si entran todos a playoffs no se marca a nadie: la tabla solo ordena el cuadro.
-    row.qualifies = hayJugados && cat.cantidad_clasifican_por_grupo < rows.length && i < cat.cantidad_clasifican_por_grupo;
+    // En liguilla no hay cruces: nadie "clasifica".
+    row.qualifies = !liguilla && hayJugados && cat.cantidad_clasifican_por_grupo < rows.length && i < cat.cantidad_clasifican_por_grupo;
   });
 
   // El aviso de desempate solo tiene sentido con la zona terminada: antes de

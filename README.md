@@ -157,7 +157,7 @@ Terminada la fase de grupos, **entran todos los equipos al cuadro**. La posició
 
 | | ⚽ Fútbol | 🏐 Vóley |
 |---|---|---|
-| **Duración** | 35 minutos: 15' + 5' de descanso + 15'. La **final**, 2 tiempos de 20'. | Al mejor de 3 sets a 20 puntos, con 2 de diferencia. |
+| **Duración** | Grupos y cuartos: 25 minutos (10' + 5' de descanso + 10'), uno tras otro. Semis y final: 15' + 5' + 15'. Femenino: liguilla (gana la que más puntos suma). | Al mejor de 3 sets a 20 puntos, con 2 de diferencia. |
 | **Planteles** | De 7 a 10 jugadores. La app no deja anotar un jugador número 11. | — |
 | **Tarjetas** | Con **2 amarillas** acumuladas, o una **roja**, el jugador se pierde el **partido siguiente**. | — |
 

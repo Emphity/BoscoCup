@@ -2,10 +2,10 @@
  * Reglas de tiempo del torneo (fútbol masculino y femenino).
  *
  * - Puertas abren a las 8:00; los partidos de fase de grupos arrancan a las 9:30.
- * - Cada partido dura 35 minutos: 15' de primer tiempo, 5' de descanso y 15'
- *   de segundo tiempo.
+ * - Fase de grupos, octavos y cuartos: cada partido dura 25 minutos en total
+ *   (10' + 5' de descanso + 10') y al terminar uno arranca el siguiente.
+ * - Semis, 3er puesto y final: 15' + 5' de descanso + 15' (turno de 35').
  * - En playoff, si terminan empatados, se define por penales (tanda de 5).
- * - La final se juega a 2 tiempos de 20' (turno de 45').
  * - Máximo 3 cambios por equipo en cada partido.
  *
  * La espera a que se presente un equipo la manejan los organizadores a mano,
@@ -16,27 +16,43 @@ export const DIA_TORNEO = { anio: 2026, mes: 11, dia: 22 } as const;
 
 export const FUTBOL = {
   horaInicio: { horas: 9, minutos: 30 },
+  /** Tiempos de la fase de grupos, octavos y cuartos (turno total de 25'). */
+  minutosPorTiempoGrupos: 10,
+  /** Tiempos de semis, 3er puesto y final (turno total de 35'). */
   minutosPorTiempo: 15,
-  /** La final es la única ronda con tiempos más largos. */
-  minutosPorTiempoFinal: 20,
   minutosDescanso: 5,
   maxCambios: 3,
   /** Tiros por equipo en la tanda de penales; si siguen iguales, muerte súbita. */
   penalesPorEquipo: 5
 } as const;
 
-/** Minutos que ocupa un partido en la cancha. */
-export const FUTBOL_MINUTOS_POR_TURNO = FUTBOL.minutosPorTiempo * 2 + FUTBOL.minutosDescanso;
+/** Minutos que ocupa un partido de fase de grupos en la cancha (25'). */
+export const FUTBOL_MINUTOS_POR_TURNO = FUTBOL.minutosPorTiempoGrupos * 2 + FUTBOL.minutosDescanso;
 
-/** Minutos de cada tiempo según la ronda (la final va a 20'). */
+/** Rondas que se juegan con los tiempos cortos de la fase de grupos. */
+const RONDAS_CORTAS = new Set(["Octavos", "Cuartos"]);
+
+/** Minutos de cada tiempo según la ronda (sin ronda = fase de grupos). */
 export function minutosPorTiempo(ronda: string | null | undefined): number {
-  return ronda === "Final" ? FUTBOL.minutosPorTiempoFinal : FUTBOL.minutosPorTiempo;
+  return !ronda || RONDAS_CORTAS.has(ronda) ? FUTBOL.minutosPorTiempoGrupos : FUTBOL.minutosPorTiempo;
 }
 
 /** Minutos que ocupa en la cancha un partido de esa ronda. */
 export function minutosDeTurno(ronda: string | null | undefined): number {
   return minutosPorTiempo(ronda) * 2 + FUTBOL.minutosDescanso;
 }
+
+/**
+ * Fútbol femenino se juega como liguilla: un solo grupo de todos contra todos
+ * en la Cancha 3, arrancando a las 9:30, y la campeona es la que más puntos
+ * suma. No hay cruces.
+ */
+export function esLiguilla(c: { deporte: string; rama: string } | null | undefined): boolean {
+  return c?.deporte === "futbol" && c.rama === "Femenino";
+}
+
+/** Nombre de la cancha fija del femenino (se busca por nombre, ej. "Cancha 3"). */
+export const CANCHA_FEMENINO = /^cancha\s*3\b/i;
 
 /**
  * Plantel de fútbol: máximo 10 jugadores por equipo. El mínimo depende de la

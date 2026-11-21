@@ -57,7 +57,10 @@ export function PublicHome() {
   const [params, setParams] = useSearchParams();
   const sport: Sport = params.get("deporte") === "voley" ? "voley" : "futbol";
   const branch: Branch = params.get("rama") === "femenino" ? "femenino" : "masculino";
-  const pestana: Pestana = PESTANAS.find((p) => p.id === params.get("seccion"))?.id ?? "inicio";
+  // Fútbol femenino es liguilla: sin cruces, la campeona es la que más puntos suma.
+  const liguilla = sport === "futbol" && branch === "femenino";
+  const pestanas = liguilla ? PESTANAS.filter((p) => p.id !== "cruces") : PESTANAS;
+  const pestana: Pestana = pestanas.find((p) => p.id === params.get("seccion"))?.id ?? "inicio";
   function cambiarVista(cambios: { deporte?: Sport; rama?: Branch; seccion?: Pestana }) {
     const next = new URLSearchParams(params);
     const poner = (clave: string, valor: string | undefined, porDefecto: string) => {
@@ -223,7 +226,7 @@ export function PublicHome() {
   }
   const abrirEquipo = (team: Team) => mostrarEquipo({ team, sport, branch: ramaActual });
   const abrirDesdeVivo = (team: Team, m: LiveMatch) => mostrarEquipo({ team, sport: m.sport, branch: m.branch });
-  const tabIndex = PESTANAS.findIndex((p) => p.id === pestana);
+  const tabIndex = pestanas.findIndex((p) => p.id === pestana);
   const sportColor = `var(--color-${sport})`;
 
   return (
@@ -287,22 +290,25 @@ export function PublicHome() {
             {liveMatches.length > 0 && <LiveRail matches={liveMatches} onTeam={abrirDesdeVivo} />}
             <div className="pub-grid">
               <section className="card">
-                <SectionHead title="Tabla" action={() => irA("tabla")} />
-                <Standings zones={data.zones} compact onTeam={abrirEquipo} />
+                <SectionHead title={liguilla ? "Liguilla" : "Tabla"} action={() => irA("tabla")} />
+                <Standings zones={data.zones} compact liguilla={liguilla} onTeam={abrirEquipo} />
               </section>
-              <section className="card">
-                <SectionHead title="Cruces" action={() => irA("cruces")} />
-                <BracketView matches={data.bracket} onTeam={abrirEquipo} />
-              </section>
+              {!liguilla && (
+                <section className="card">
+                  <SectionHead title="Cruces" action={() => irA("cruces")} />
+                  <BracketView matches={data.bracket} onTeam={abrirEquipo} />
+                </section>
+              )}
             </div>
           </>
         )}
 
         {pestana === "tabla" && (
           <section className="card">
-            <SectionHead title="Tabla de posiciones" />
-            <Standings zones={data.zones} onTeam={abrirEquipo} />
+            <SectionHead title={liguilla ? "Liguilla" : "Tabla de posiciones"} />
+            <Standings zones={data.zones} liguilla={liguilla} onTeam={abrirEquipo} />
             <p className="legend">
+              {liguilla && "Todas contra todas: la que más puntos suma es campeona · "}
               {data.zones.some((z) => z.rows.some((r) => r.qualifies)) && (
                 <>
                   <span className="legend-q" /> Clasifica a cruces ·{" "}
@@ -314,7 +320,7 @@ export function PublicHome() {
           </section>
         )}
 
-        {pestana === "cruces" && (
+        {pestana === "cruces" && !liguilla && (
           <section className="card">
             <SectionHead title="Cruces" />
             <BracketView matches={data.bracket} onTeam={abrirEquipo} />
@@ -329,9 +335,9 @@ export function PublicHome() {
         )}
       </main>
 
-      <nav className="tabbar" aria-label="Secciones" style={{ "--n": PESTANAS.length, "--i": tabIndex } as CSSProperties}>
+      <nav className="tabbar" aria-label="Secciones" style={{ "--n": pestanas.length, "--i": tabIndex } as CSSProperties}>
         <span className="tabbar-thumb" aria-hidden="true" />
-        {PESTANAS.map(({ id, label, icon: Icon }) => (
+        {pestanas.map(({ id, label, icon: Icon }) => (
           <button key={id} type="button" className={pestana === id ? "active" : ""} aria-current={pestana === id ? "page" : undefined} onClick={() => irA(id)}>
             <Icon />
             <span>{label}</span>
@@ -494,7 +500,17 @@ function LiveRail({ matches, onTeam }: { matches: LiveMatch[]; onTeam: (t: Team,
   );
 }
 
-function Standings({ zones, compact, onTeam }: { zones: ZoneStandings[]; compact?: boolean; onTeam: (t: Team) => void }) {
+function Standings({
+  zones,
+  compact,
+  liguilla,
+  onTeam
+}: {
+  zones: ZoneStandings[];
+  compact?: boolean;
+  liguilla?: boolean;
+  onTeam: (t: Team) => void;
+}) {
   if (zones.every((z) => z.rows.length === 0)) {
     return <p className="empty-note">Todavía no hay equipos cargados en esta categoría.</p>;
   }
@@ -502,6 +518,9 @@ function Standings({ zones, compact, onTeam }: { zones: ZoneStandings[]; compact
     <div className="zones">
       {zones.map((zone) => {
         const empatados = zone.completa ? zone.rows.filter((r) => r.empatado) : [];
+        // Liguilla: con todos los partidos jugados y sin empate arriba, la primera es campeona.
+        const lider = liguilla && zone.rows[0]?.played > 0 ? zone.rows[0] : null;
+        const campeona = lider && zone.completa && !lider.empatado ? lider : null;
         return (
           <div className="zone" key={zone.id}>
             {zone.nombre && <div className="zone-name">{zone.nombre}</div>}
@@ -537,7 +556,7 @@ function Standings({ zones, compact, onTeam }: { zones: ZoneStandings[]; compact
                 </thead>
                 <tbody>
                   {zone.rows.map((row) => (
-                    <tr className={row.qualifies ? "q" : ""} key={row.team.id} onClick={() => onTeam(row.team)}>
+                    <tr className={row.qualifies || row === lider ? "q" : ""} key={row.team.id} onClick={() => onTeam(row.team)}>
                       <td className="pos tnum">
                         <span>{row.position}</span>
                       </td>
@@ -570,6 +589,7 @@ function Standings({ zones, compact, onTeam }: { zones: ZoneStandings[]; compact
                 </tbody>
               </table>
             </div>
+            {campeona && <p className="notice">🏆 Campeona: {campeona.team.name}</p>}
             {empatados.length > 0 && (
               <p className="notice">
                 Empate total entre {empatados.map((r) => r.team.name).join(" y ")}: se define con un partido de desempate.

@@ -26,7 +26,7 @@ function writeState(partidoId: string, state: ClockState) {
   localStorage.setItem(key(partidoId), JSON.stringify(state));
 }
 
-/** Reloj del partido. `minutosPorTiempo` es 15 en general y 20 en la final. */
+/** Reloj del partido. `minutosPorTiempo` es 10 en grupos y cuartos, 15 en semis y final. */
 export function useMatchClock(partidoId: string, minutosPorTiempo: number) {
   const [state, setState] = useState<ClockState>(() => readState(partidoId));
   const [, tick] = useState(0);
