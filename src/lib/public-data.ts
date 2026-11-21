@@ -3,7 +3,7 @@ import type { BracketMatch, Branch, HistorialMatch, LiveMatch, Sport, Team, Zone
 import type { Categoria, EventoPartidoRow, PartidoRow } from "@/lib/db-types";
 import { computeZonesForCategoria, estaEnVivo, teamFrom, zonasParaMostrar } from "@/lib/standings";
 import { avanzarEnPantalla, cuadroSoloGrupos, proyectarCuadro } from "@/lib/bracket";
-import { esLiguilla } from "@/lib/reglas";
+import { sinPlayoff } from "@/lib/reglas";
 import { getCanchas, getCategorias, getEquipos, getGrupoEquipos, getGrupos } from "@/lib/static-cache";
 
 const ROUND_ORDER = ["Octavos", "Cuartos", "Semifinal", "3er puesto", "Final"];
@@ -211,8 +211,8 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
     ? grupos
     : zonas.zones.filter((z) => z.rows.length > 0).map((z) => ({ nombre: z.nombre, cantidad: z.rows.length }));
   const proyeccion = enBlanco ? cuadroSoloGrupos(grupos.length > 0 ? tamanios : [], equipos.length) : proyectarCuadro(zones);
-  // Liguilla (femenino): no hay cruces, gana el que más puntos suma.
-  const bracket = esLiguilla(cat) ? [] : avanzarEnPantalla(reales.length > 0 ? reales : proyeccion);
+  // Sin cuadro de playoff (liguilla femenino o vóley): no hay cruces, gana el que más puntos suma.
+  const bracket = sinPlayoff(cat) ? [] : avanzarEnPantalla(reales.length > 0 ? reales : proyeccion);
 
   // ---- historial de resultados ----
   const grupoNombrePorId = new Map(grupos.map((g) => [g.id, g.nombre]));

@@ -57,9 +57,11 @@ export function PublicHome() {
   const [params, setParams] = useSearchParams();
   const sport: Sport = params.get("deporte") === "voley" ? "voley" : "futbol";
   const branch: Branch = params.get("rama") === "femenino" ? "femenino" : "masculino";
-  // Fútbol femenino es liguilla: sin cruces, la campeona es la que más puntos suma.
-  const liguilla = sport === "futbol" && branch === "femenino";
-  const pestanas = liguilla ? PESTANAS.filter((p) => p.id !== "cruces") : PESTANAS;
+  // Fútbol femenino es liguilla (ida y vuelta) y el vóley juega todos contra
+  // todos: ninguno de los dos tiene cruces, el campeón sale de la tabla.
+  const liguillaFemenino = sport === "futbol" && branch === "femenino";
+  const sinCuadro = liguillaFemenino || sport === "voley";
+  const pestanas = sinCuadro ? PESTANAS.filter((p) => p.id !== "cruces") : PESTANAS;
   const pestana: Pestana = pestanas.find((p) => p.id === params.get("seccion"))?.id ?? "inicio";
   function cambiarVista(cambios: { deporte?: Sport; rama?: Branch; seccion?: Pestana }) {
     const next = new URLSearchParams(params);
@@ -290,10 +292,10 @@ export function PublicHome() {
             {liveMatches.length > 0 && <LiveRail matches={liveMatches} onTeam={abrirDesdeVivo} />}
             <div className="pub-grid">
               <section className="card">
-                <SectionHead title={liguilla ? "Liguilla" : "Tabla"} action={() => irA("tabla")} />
-                <Standings zones={data.zones} compact liguilla={liguilla} onTeam={abrirEquipo} />
+                <SectionHead title={liguillaFemenino ? "Liguilla" : "Tabla"} action={() => irA("tabla")} />
+                <Standings zones={data.zones} compact liguilla={sinCuadro} campeonLabel={sport === "voley" ? "Campeón" : "Campeona"} onTeam={abrirEquipo} />
               </section>
-              {!liguilla && (
+              {!sinCuadro && (
                 <section className="card">
                   <SectionHead title="Cruces" action={() => irA("cruces")} />
                   <BracketView matches={data.bracket} onTeam={abrirEquipo} />
@@ -305,10 +307,11 @@ export function PublicHome() {
 
         {pestana === "tabla" && (
           <section className="card">
-            <SectionHead title={liguilla ? "Liguilla" : "Tabla de posiciones"} />
-            <Standings zones={data.zones} liguilla={liguilla} onTeam={abrirEquipo} />
+            <SectionHead title={liguillaFemenino ? "Liguilla" : "Tabla de posiciones"} />
+            <Standings zones={data.zones} liguilla={sinCuadro} campeonLabel={sport === "voley" ? "Campeón" : "Campeona"} onTeam={abrirEquipo} />
             <p className="legend">
-              {liguilla && "Todas contra todas: la que más puntos suma es campeona · "}
+              {liguillaFemenino && "Ida y vuelta: la que más puntos suma es campeona · "}
+              {sport === "voley" && "Todos contra todos: el que más puntos suma es campeón · "}
               {data.zones.some((z) => z.rows.some((r) => r.qualifies)) && (
                 <>
                   <span className="legend-q" /> Clasifica a cruces ·{" "}
@@ -320,7 +323,7 @@ export function PublicHome() {
           </section>
         )}
 
-        {pestana === "cruces" && !liguilla && (
+        {pestana === "cruces" && !sinCuadro && (
           <section className="card">
             <SectionHead title="Cruces" />
             <BracketView matches={data.bracket} onTeam={abrirEquipo} />
@@ -504,11 +507,14 @@ function Standings({
   zones,
   compact,
   liguilla,
+  campeonLabel = "Campeona",
   onTeam
 }: {
   zones: ZoneStandings[];
   compact?: boolean;
+  /** Sin cuadro de playoff: la tabla sola decide quién es campeón (fútbol femenino y vóley). */
   liguilla?: boolean;
+  campeonLabel?: string;
   onTeam: (t: Team) => void;
 }) {
   if (zones.every((z) => z.rows.length === 0)) {
@@ -589,7 +595,11 @@ function Standings({
                 </tbody>
               </table>
             </div>
-            {campeona && <p className="notice">🏆 Campeona: {campeona.team.name}</p>}
+            {campeona && (
+              <p className="notice">
+                🏆 {campeonLabel}: {campeona.team.name}
+              </p>
+            )}
             {empatados.length > 0 && (
               <p className="notice">
                 Empate total entre {empatados.map((r) => r.team.name).join(" y ")}: se define con un partido de desempate.

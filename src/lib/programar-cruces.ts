@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { DIA_TORNEO, FUTBOL, VOLEY, minutosDeTurno } from "@/lib/reglas";
+import { CANCHA_FEMENINO, DIA_TORNEO, FUTBOL, VOLEY, minutosDeTurno } from "@/lib/reglas";
 import { ROUND_ORDER, partidosDeRonda } from "@/lib/bracket";
 import type { CanchaRow, Categoria, DeporteDb, PartidoRow } from "@/lib/db-types";
 
@@ -9,7 +9,9 @@ import type { CanchaRow, Categoria, DeporteDb, PartidoRow } from "@/lib/db-types
  * - Canchas: las mismas que usó la categoría en la fase de grupos (si no hay,
  *   cualquiera compatible con el deporte). Cada mitad del cuadro va a una
  *   cancha elegida al azar y la mantiene en las rondas siguientes; la final y
- *   el 3er puesto se juegan a la par, cada uno en una cancha.
+ *   el 3er puesto se juegan a la par, cada uno en una cancha. Excepción: el
+ *   playoff del fútbol masculino nunca usa la Cancha 3, aunque la haya usado
+ *   en grupos, porque desde el mediodía es la cancha fija del femenino.
  * - Horario: cada ronda arranca cuando termina la anterior (la primera, cuando
  *   termina la fase de grupos) y nunca se superpone con otro partido de esa
  *   cancha, sea de la categoría que sea. Si el torneo ya está en marcha, no
@@ -64,11 +66,15 @@ export async function programarCruces(categoriaId: string): Promise<{ programado
   const propios = todos.filter((p) => p.categoria_id === categoriaId);
 
   // ---- canchas candidatas ----
+  // Fútbol masculino: el playoff deja la cancha del femenino (Cancha 3) libre
+  // para la liguilla, aunque el masculino la haya usado en la fase de grupos.
+  const esMasculino = cat.deporte === "futbol" && cat.rama === "Masculino";
+  const sinCanchaFemenino = (lista: CanchaRow[]) => (esMasculino ? lista.filter((c) => !CANCHA_FEMENINO.test(c.nombre)) : lista);
   const usadasEnGrupos = new Set(propios.filter((p) => !p.ronda_eliminatoria && p.cancha_id).map((p) => p.cancha_id as string));
-  let candidatas = canchas.filter((c) => usadasEnGrupos.has(c.id) && c.estado !== "fuera_de_servicio");
+  let candidatas = sinCanchaFemenino(canchas.filter((c) => usadasEnGrupos.has(c.id) && c.estado !== "fuera_de_servicio"));
   if (candidatas.length === 0) {
-    candidatas = canchas.filter(
-      (c) => c.estado !== "fuera_de_servicio" && (!c.deportes_compatibles?.length || c.deportes_compatibles.includes(cat.deporte))
+    candidatas = sinCanchaFemenino(
+      canchas.filter((c) => c.estado !== "fuera_de_servicio" && (!c.deportes_compatibles?.length || c.deportes_compatibles.includes(cat.deporte)))
     );
   }
   if (candidatas.length === 0) return { programados: 0, error: "No hay canchas disponibles para este deporte." };

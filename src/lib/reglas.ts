@@ -16,6 +16,8 @@ export const DIA_TORNEO = { anio: 2026, mes: 11, dia: 22 } as const;
 
 export const FUTBOL = {
   horaInicio: { horas: 9, minutos: 30 },
+  /** El femenino arranca más tarde: a esa hora libera del todo la Cancha 3 el masculino. */
+  horaInicioFemenino: { horas: 12, minutos: 0 },
   /** Tiempos de la fase de grupos, octavos y cuartos (turno total de 25'). */
   minutosPorTiempoGrupos: 10,
   /** Tiempos de semis, 3er puesto y final (turno total de 35'). */
@@ -43,12 +45,27 @@ export function minutosDeTurno(ronda: string | null | undefined): number {
 }
 
 /**
- * Fútbol femenino se juega como liguilla: un solo grupo de todos contra todos
- * en la Cancha 3, arrancando a las 9:30, y la campeona es la que más puntos
- * suma. No hay cruces.
+ * Fútbol femenino se juega como liguilla: un solo grupo, ida y vuelta (cada
+ * partido se juega dos veces, local y visitante invertidos), en la Cancha 3,
+ * arrancando a las 12:00 (para entonces el masculino ya liberó esa cancha), y
+ * la campeona es la que más puntos suma. No hay cruces.
  */
 export function esLiguilla(c: { deporte: string; rama: string } | null | undefined): boolean {
   return c?.deporte === "futbol" && c.rama === "Femenino";
+}
+
+/** Vueltas que se juegan en la fase de "grupos": liguilla femenino, 2 (ida y vuelta); el resto, 1. */
+export function vueltasDeGrupo(c: { deporte: string; rama: string } | null | undefined): number {
+  return esLiguilla(c) ? 2 : 1;
+}
+
+/**
+ * Categorías sin cuadro de playoff: el fútbol femenino (liguilla, ida y
+ * vuelta) y el vóley (todos contra todos, una sola vuelta). En las dos la
+ * tabla sola decide el campeón; no hay cruces ni "clasificados".
+ */
+export function sinPlayoff(c: { deporte: string; rama: string } | null | undefined): boolean {
+  return esLiguilla(c) || c?.deporte === "voley";
 }
 
 /** Nombre de la cancha fija del femenino (se busca por nombre, ej. "Cancha 3"). */

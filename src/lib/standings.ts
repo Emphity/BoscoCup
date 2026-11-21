@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { esLiguilla } from "@/lib/reglas";
+import { sinPlayoff, vueltasDeGrupo } from "@/lib/reglas";
 import type { StandingRow, Team, ZoneStandings } from "@/types";
 import type { Categoria, EquipoRow, GrupoRow, PartidoRow } from "@/lib/db-types";
 
@@ -125,12 +125,12 @@ export function computeStandings(
     );
 
   const hayJugados = rows.some((r) => r.played > 0);
-  const liguilla = esLiguilla(cat);
+  const sinCuadro = sinPlayoff(cat);
   rows.forEach((row, i) => {
     row.position = i + 1;
     // Si entran todos a playoffs no se marca a nadie: la tabla solo ordena el cuadro.
-    // En liguilla no hay cruces: nadie "clasifica".
-    row.qualifies = !liguilla && hayJugados && cat.cantidad_clasifican_por_grupo < rows.length && i < cat.cantidad_clasifican_por_grupo;
+    // Sin cuadro de playoff (liguilla femenino o vóley) nadie "clasifica".
+    row.qualifies = !sinCuadro && hayJugados && cat.cantidad_clasifican_por_grupo < rows.length && i < cat.cantidad_clasifican_por_grupo;
   });
 
   // El aviso de desempate solo tiene sentido con la zona terminada: antes de
@@ -159,19 +159,22 @@ export function estanEmpatados(a?: StandingRow, b?: StandingRow): boolean {
 
 /**
  * La fase de grupos de una zona terminó cuando no queda ningún partido sin
- * finalizar Y todos los equipos ya se enfrentaron entre sí. Lo segundo evita
- * declarar "terminada" una zona solo porque todavía no se programaron las
- * fechas que faltan.
+ * finalizar Y todos los equipos ya se enfrentaron entre sí la cantidad de
+ * veces que corresponde (`vueltas`: 2 en la liguilla femenina —ida y
+ * vuelta—, 1 en el resto). Lo segundo evita declarar "terminada" una zona
+ * solo porque todavía no se programaron las fechas que faltan.
  */
-function zonaCompleta(equipoIds: string[], partidosZona: PartidoRow[]): boolean {
+function zonaCompleta(equipoIds: string[], partidosZona: PartidoRow[], vueltas = 1): boolean {
   if (equipoIds.length < 2 || partidosZona.length === 0) return false;
   if (partidosZona.some((p) => p.estado !== "finalizado")) return false;
-  const jugados = new Set(
-    partidosZona.map((p) => [p.equipo_local_id, p.equipo_visitante_id as string].sort().join("|"))
-  );
+  const jugados = new Map<string, number>();
+  for (const p of partidosZona) {
+    const clave = [p.equipo_local_id, p.equipo_visitante_id as string].sort().join("|");
+    jugados.set(clave, (jugados.get(clave) ?? 0) + 1);
+  }
   for (let i = 0; i < equipoIds.length; i++) {
     for (let j = i + 1; j < equipoIds.length; j++) {
-      if (!jugados.has([equipoIds[i], equipoIds[j]].sort().join("|"))) return false;
+      if ((jugados.get([equipoIds[i], equipoIds[j]].sort().join("|")) ?? 0) < vueltas) return false;
     }
   }
   return true;
@@ -368,8 +371,11 @@ export async function computeZonesForCategoria(
     cat.deporte === "voley" ? tantosPorPartido(idsFinalizados) : Promise.resolve(new Map<string, TantosPartido>())
   ]);
 
+  const vueltas = vueltasDeGrupo(cat);
+  // Sin cuadro de playoff (liguilla femenino o vóley) la categoría es una sola
+  // zona, aunque todavía tenga grupos cargados de antes de decidir el formato.
   let zones: ZoneStandings[];
-  if (grupos.length > 0) {
+  if (grupos.length > 0 && !sinPlayoff(cat)) {
     const ge = estaticos
       ? estaticos.grupoEquipos
       : await client
@@ -391,7 +397,7 @@ export async function computeZonesForCategoria(
           p.grupo_id === g.id ||
           (!p.grupo_id && equipoIds.has(p.equipo_local_id) && !!p.equipo_visitante_id && equipoIds.has(p.equipo_visitante_id));
         const partidosZona = partidosDeGrupo.filter(deLaZona);
-        const completa = zonaCompleta(equiposZona.map((e) => e.id), partidosZona);
+        const completa = zonaCompleta(equiposZona.map((e) => e.id), partidosZona, vueltas);
         return {
           id: g.id,
           nombre: g.nombre,
@@ -400,7 +406,7 @@ export async function computeZonesForCategoria(
         };
       });
   } else {
-    const completa = zonaCompleta(equipos.map((e) => e.id), partidosDeGrupo);
+    const completa = zonaCompleta(equipos.map((e) => e.id), partidosDeGrupo, vueltas);
     zones = [{ id: "general", nombre: "", completa, rows: computeStandings(equipos, finalizadosDeGrupo, cat, tarjetas, completa, tantos) }];
   }
 

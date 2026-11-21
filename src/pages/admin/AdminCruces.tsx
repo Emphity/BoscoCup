@@ -13,7 +13,7 @@ import {
   MAX_EQUIPOS_LLAVE
 } from "@/lib/bracket";
 import { programarCruces } from "@/lib/programar-cruces";
-import { DIA_TORNEO, esLiguilla } from "@/lib/reglas";
+import { DIA_TORNEO, esLiguilla, sinPlayoff } from "@/lib/reglas";
 import { BracketView } from "@/components/BracketView";
 import { IconPencil } from "@/components/icons";
 import type { CanchaRow, Categoria, PartidoRow } from "@/lib/db-types";
@@ -45,6 +45,8 @@ export function AdminCruces() {
 
   const categoria = categorias.find((c) => c.id === categoriaId);
   const liguilla = esLiguilla(categoria);
+  /** Fútbol femenino (liguilla) o vóley (todos contra todos): sin cuadro de playoff. */
+  const sinCuadro = sinPlayoff(categoria);
 
   useEffect(() => {
     if (!supabase) return;
@@ -235,12 +237,20 @@ export function AdminCruces() {
       {liguilla && (
         <div className="panel">
           <p className="form-hint" style={{ margin: 0 }}>
-            El fútbol femenino se juega como liguilla: todas contra todas y la que más puntos suma es campeona. No hay cruces.
+            El fútbol femenino se juega como liguilla ida y vuelta (cada partido se juega dos veces) y la que más puntos suma es
+            campeona. No hay cruces.
+          </p>
+        </div>
+      )}
+      {sinCuadro && !liguilla && (
+        <div className="panel">
+          <p className="form-hint" style={{ margin: 0 }}>
+            El vóley se juega todos contra todos (una sola vuelta) y el que más puntos suma es campeón. No hay cruces.
           </p>
         </div>
       )}
 
-      {zonas && !hayCuadro && !liguilla && (
+      {zonas && !hayCuadro && !sinCuadro && (
         <div className="panel">
           <h3 style={{ margin: "0 0 14px", fontSize: 14 }}>Tabla actual</h3>
           {zonas.zones.every((z) => z.rows.length === 0) ? (
@@ -320,7 +330,7 @@ export function AdminCruces() {
 
       {mensaje && <p className={mensaje.ok ? "form-success" : "form-error"}>{mensaje.texto}</p>}
 
-      {!liguilla && <div className="panel">
+      {!sinCuadro && <div className="panel">
         <div className="bk-admin-head">
           <h3 style={{ margin: 0, fontSize: 14 }}>Cuadro de playoffs</h3>
           {hayCuadro && (
