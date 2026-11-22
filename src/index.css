@@ -545,13 +545,11 @@ button {
 .island-count {
   flex: none;
 }
+.island.idle .island-compact {
+  justify-content: center;
+}
 .island.idle .island-count {
   color: var(--color-island-muted);
-  margin: 0 auto;
-}
-.island.idle .island-dot {
-  position: absolute;
-  left: 16px;
 }
 .island-ticker {
   display: flex;
