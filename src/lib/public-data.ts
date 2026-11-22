@@ -26,7 +26,6 @@ function scoreDesde(partido: PartidoRow, eventos: EventoPartidoRow[]): { home: n
   let home = 0;
   let away = 0;
   for (const e of eventos) {
-    if (e.partido_id !== partido.id) continue;
     if (e.tipo === "gol" || e.tipo === "penal_convertido") {
       if (e.equipo_id === partido.equipo_local_id) home++;
       else if (e.equipo_id === partido.equipo_visitante_id) away++;
@@ -38,6 +37,17 @@ function scoreDesde(partido: PartidoRow, eventos: EventoPartidoRow[]): { home: n
   return { home, away };
 }
 
+/** Agrupa los eventos por partido: así cada partido mira solo los suyos en O(1) en vez de re-escanear la lista entera. */
+function eventosPorPartido(eventos: EventoPartidoRow[]): Map<string, EventoPartidoRow[]> {
+  const mapa = new Map<string, EventoPartidoRow[]>();
+  for (const e of eventos) {
+    const lista = mapa.get(e.partido_id);
+    if (lista) lista.push(e);
+    else mapa.set(e.partido_id, [e]);
+  }
+  return mapa;
+}
+
 export interface PublicData {
   zones: ZoneStandings[];
   bracket: BracketMatch[];
@@ -47,12 +57,6 @@ export interface PublicData {
 }
 
 const EMPTY: PublicData = { zones: [], bracket: [], historial: [] };
-
-export async function fetchLiveCount(): Promise<number> {
-  if (!supabase) return 0;
-  const { data } = await supabase.from("partidos").select("id").in("estado", ["en_juego", "entretiempo"]);
-  return data?.length ?? 0;
-}
 
 /** Partidos en vivo de TODO el torneo, para el carrusel de la home (no filtrado por pestaña). */
 export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
@@ -81,6 +85,7 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
   const equipoMap = new Map(equipos.map((e) => [e.id, teamFrom(e)]));
   const canchaMap = new Map(canchas.map((c) => [c.id, c.nombre]));
   const eventos = (eventosData as EventoPartidoRow[]) ?? [];
+  const eventosDe = eventosPorPartido(eventos);
 
   return partidos
     .filter((p) => equipoMap.has(p.equipo_local_id) && equipoMap.has(p.equipo_visitante_id as string) && categoriaMap.has(p.categoria_id))
@@ -88,7 +93,7 @@ export async function fetchAllLiveMatches(): Promise<LiveMatch[]> {
       const cat = categoriaMap.get(p.categoria_id) as Categoria;
       // En vóley el veedor va guardando los sets ganados directamente en el resultado.
       const { home: homeScore, away: awayScore } =
-        cat.deporte === "voley" ? { home: p.resultado_local ?? 0, away: p.resultado_visitante ?? 0 } : scoreDesde(p, eventos);
+        cat.deporte === "voley" ? { home: p.resultado_local ?? 0, away: p.resultado_visitante ?? 0 } : scoreDesde(p, eventosDe.get(p.id) ?? []);
       return {
         id: p.id,
         sport: cat.deporte,
@@ -144,6 +149,7 @@ export async function fetchHorarios(): Promise<HorarioMatch[]> {
       .eq("anulado", false);
     eventos = (data as EventoPartidoRow[]) ?? [];
   }
+  const eventosDe = eventosPorPartido(eventos);
 
   return partidos
     .filter((p) => categoriaMap.has(p.categoria_id) && equipoMap.has(p.equipo_local_id))
@@ -156,7 +162,7 @@ export async function fetchHorarios(): Promise<HorarioMatch[]> {
     .map((p) => {
       const cat = categoriaMap.get(p.categoria_id) as Categoria;
       const enVivo = estaEnVivo(p);
-      const marcador = enVivo && cat.deporte === "futbol" ? scoreDesde(p, eventos) : null;
+      const marcador = enVivo && cat.deporte === "futbol" ? scoreDesde(p, eventosDe.get(p.id) ?? []) : null;
       const conResultado = enVivo || p.estado === "finalizado";
       return {
         id: p.id,
@@ -217,8 +223,9 @@ export async function fetchPublicData(sport: Sport, branch: Branch): Promise<Pub
       )
       .eq("anulado", false);
     const eventos = (ev as EventoPartidoRow[]) ?? [];
+    const eventosDe = eventosPorPartido(eventos);
     for (const p of playoffEnJuego) {
-      const { home, away } = scoreDesde(p, eventos);
+      const { home, away } = scoreDesde(p, eventosDe.get(p.id) ?? []);
       p.resultado_local = home;
       p.resultado_visitante = away;
     }
