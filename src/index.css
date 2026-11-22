@@ -547,7 +547,11 @@ button {
 }
 .island.idle .island-count {
   color: var(--color-island-muted);
-  margin: 0 auto 0 0;
+  margin: 0 auto;
+}
+.island.idle .island-dot {
+  position: absolute;
+  left: 16px;
 }
 .island-ticker {
   display: flex;
@@ -619,6 +623,7 @@ button {
   padding: 4px 18px 6px;
   color: var(--color-island-muted);
   font-size: 13px;
+  text-align: center;
 }
 .island-match {
   margin: 0 10px 6px;
